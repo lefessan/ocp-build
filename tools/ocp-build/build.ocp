@@ -130,6 +130,7 @@ is not yet an optional plugin, but it should at some point (TODO).
 begin library "ocp-build-ocaml-plugin"
   files = [
     "buildOCamlConfig.ml";
+    "buildOCamlSwitch.ml";
     "buildOCamlTypes.ml";
     "buildOCamlGlobals.ml";
     "buildOCamlMisc.ml";

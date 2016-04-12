@@ -210,7 +210,7 @@ let check_config cin =
   end;
 
 
-  let ocamlc = find_first_in_path path check_is_ocamlc
+  let ocamlc = BuildConfig.find_first_in_path path check_is_ocamlc
       cin.cin_ocamlc_variants in
   let ocamlopt = find_first_in_path path check_is_ocamlopt
       cin.cin_ocamlopt_variants in
