@@ -97,14 +97,23 @@ type targets = {
 }
 
 module type Plugin = sig
-  val name : string
+  val name : string   (* name to display *)
+  val ident : string  (* uniq ident for this plugin *)
 end
+
+module type Switch = sig
+  val name : string
+  val ident : string
+  val plugin : (module Plugin)
+end
+
 
 (* A package, as exported by a plugin *)
 
 module type Package = sig
   val name: string
   val info : package_info
+  val switch : (module Switch)
   val plugin : (module Plugin)
 
   val conf_targets : unit -> targets

@@ -29,6 +29,9 @@ open BuildEngineGlobals
 open BuildOCamlTypes
 open BuildOCPTypes (* for dep_link *)
 
+
+module Version1 = struct
+
 (* TODO:
   When installing, we should accept the option -sanitize, to clean everything
   before, i.e. remove META files that would be refer to the same package.
@@ -48,6 +51,9 @@ open BuildOCPTypes (* for dep_link *)
         The META. file is in one of the ocamlfind directory, and
         the "directory" is absolute.
 *)
+
+
+
 
 type install_where = {
   install_destdir : string option;
@@ -576,3 +582,39 @@ let install_what () =
       install_asm_lib = true;
       install_byte_lib = true;
     }
+
+
+end
+
+
+
+
+(************************************************************************)
+(*                                                                      *)
+(*                                                                      *)
+(*                                                                      *)
+(*                                NEW VERSION                           *)
+(*                                                                      *)
+(*                                                                      *)
+(*                                                                      *)
+(*                                                                      *)
+(************************************************************************)
+
+module Version2 = struct
+
+  type install_config = {
+    install_bindir : string;
+    install_metadir : string;
+    install_ocplibdir : string;
+    (*
+    install_ocamldir : string;
+    install_ocpnsdir : string;
+    *)
+  }
+
+
+
+
+end
+
+include Version1

@@ -146,6 +146,7 @@ begin library "ocp-build-ocaml-plugin"
     (*    "buildOCFGen.ml"; *)
     "buildAutogen.ml";           (* Generate .ocp from directory content *)
 
+    "buildOCamlPlugin.ml";
   ]
   requires = [ "ocp-build-lib" "ocplib-ocamlfind" ]
 end

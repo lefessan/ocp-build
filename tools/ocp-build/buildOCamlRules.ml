@@ -2731,13 +2731,7 @@ let add_package bc pk =
     Printf.eprintf "Error: %s\n%!" s;
     clean_exit 2
 
-let plugin =
-  let module Plugin = struct
-    let name = "OCaml"
-  end in
-  (module Plugin : Plugin)
-
-let create cin cout bc state =
+let create plugin switch cin cout bc state =
 
   BuildOCamlGlobals.reset ();
 (*  BuildOCPPrinter.eprint_project "BuildOCamlRules.create" ptmp; *)
@@ -2828,6 +2822,7 @@ let create cin cout bc state =
       let name = lib.lib.lib_name
       let info = lib.lib
       let plugin = plugin
+      let switch = switch
 
       let clean_targets () = assert false
       let build_targets () =

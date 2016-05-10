@@ -363,7 +363,8 @@ let do_init_project_building p pj =
   let bc = new_builder_context b in
   b.stop_on_error_arg <- !stop_on_error_arg;
 
-  let packages = BuildOCamlRules.create p.cin p.cout bc pj in
+  let switch = BuildOCamlPlugin.create_switch BuildOCamlPlugin.plugin in
+  let packages = BuildOCamlPlugin.create_packages switch p.cin p.cout bc pj in
 
   if !print_build_context then
     BuildEngineDisplay.eprint_context b;
