@@ -606,14 +606,53 @@ module Version2 = struct
     install_bindir : string;
     install_metadir : string;
     install_ocplibdir : string;
+
+    install_destdir : string option;
     (*
     install_ocamldir : string;
     install_ocpnsdir : string;
     *)
   }
 
+  (*
+TODO:
+1) verify that [metadir] is included in [ocaml_search_path].
 
+metadir:
+1/ --metadir DIR
+2/ top of ocamlfind config
+3/ ${ocamldir}
 
+ocpnsdir:
+1/ --ocpnsdir NS
+2/ ""
+
+ocplibdir:
+1/ --ocplibdir DIR
+2/ ${ocamldir}/${ocpnsdir}
+
+ocamldir:
+1/ --ocamldir DIR
+2/ ${OCPBUILD_OCAMLDIR}
+3/ ${OCAMLLIB}
+
+*)
+
+(*
+  let install_config sc =
+    let install_bindir = ... in
+    let install_metadir = ... in
+    let install_ocplibdir = ... in
+
+    let install_destdir = ... in
+    {
+      install_bindir;
+      install_metadir;
+      install_ocplibdir;
+
+      install_destdir;
+    }
+*)
 
 end
 

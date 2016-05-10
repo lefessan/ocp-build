@@ -18,6 +18,33 @@
 (*  SOFTWARE.                                                             *)
 (**************************************************************************)
 
+(* TODO:
+  We should obey:
+  * OCAMLFIND_TOOLCHAIN
+  * OCAMLFIND_METADIR
+  * OCAMLFIND_COMMANDS
+  * OCAMLFIND_DESTDIR
+*)
+
+open StringCompat
+
+type switch_config_options = {
+  switch_option_name : string;
+  mutable switch_option_ident : string;
+
+  mutable switch_option_ocamlbin : string option;
+  mutable switch_option_toolchain : string option;
+  mutable switch_option_ocamldir : string option;
+  mutable switch_option_metadir : string option;
+  mutable switch_option_ocpnsdir : string option;
+  mutable switch_option_ocplibdir : string option;
+  mutable switch_option_bindir : string option;
+}
+
+type ocamlfind_config = {
+  ocamlfind_path : string list;
+}
+
 type switch_config = {
     switch_ocamlbin : string;
     switch_ocamlrun : string;
@@ -42,33 +69,153 @@ type switch_config = {
     switch_ext_lib : string;
     switch_ext_dll : string;
     switch_os_type : string;
+
+    switch_ocamlfind : ocamlfind_config option;
+
+    switch_bindir : string;
+    switch_ocamldir : string;
+    switch_metadir : string;
   }
+
+
+module ARGUMENTS : sig
+
+  val init : unit -> unit
+  val load : unit -> (string * Arg.spec * string) list
+  val save : unit -> unit
+
+end = struct
+
+  let switches = ref StringMap.empty
+
+  let find_switch switch_option_name switch_option_ident =
+    try
+      StringMap.find switch_option_name !switches
+    with Not_found ->
+      let switch = {
+        switch_option_name;
+        switch_option_ident;
+        switch_option_ocamlbin = None;
+        switch_option_toolchain = None;
+        switch_option_ocamldir = None;
+        switch_option_metadir = None;
+        switch_option_ocpnsdir = None;
+        switch_option_ocplibdir = None;
+        switch_option_bindir = None;
+      }
+      in
+      switches := StringMap.add switch_option_name switch !switches;
+      switch
+
+  let load_switches () =
+    assert false (* TODO: scan _obuild looking for switch configurations *)
+
+  let current_switch = ref (find_switch "default" "")
+
+  let select_switch switch_option_name switch_option_ident =
+    let ( _ : switch_config_options) =
+      find_switch switch_option_name switch_option_ident in
+    ()
+
+  let remove_switch switch_name =
+    let switch = try StringMap.find switch_name !switches
+      with Not_found ->
+        Printf.eprintf "Error: cannot remove inexistant switch %S\n%!"
+          switch_name;
+        exit 2
+    in
+    switches := StringMap.remove switch_name !switches;
+    assert false (* TODO: remove switch configuration from _obuild too *)
+
+  let switch_args = [
+
+    "-ocamlbin", Arg.String (fun s ->
+        (!current_switch).switch_option_ocamlbin <- Some s),
+    "DIR Set ocamlbin for this switch";
+
+    "-toolchain", Arg.String (fun s ->
+        (!current_switch).switch_option_toolchain <- Some s),
+    "TOOLCHAIN Set toolchain for this switch";
+
+
+    "-ocamldir", Arg.String (fun s ->
+        (!current_switch).switch_option_ocamldir <- Some s),
+    "DIR Set ocamldir for this switch";
+
+    (* formerly, -install-meta *)
+    "-metadir", Arg.String (fun s ->
+        (!current_switch).switch_option_metadir <- Some s),
+    "DIR Set metadir for this switch";
+
+    "-ocpnsdir", Arg.String (fun s ->
+        (!current_switch).switch_option_ocpnsdir <- Some s),
+    "DIR Set ocpnsdir for this switch";
+
+    (* formerly, -install-lib *)
+    "-ocplibdir", Arg.String (fun s ->
+        (!current_switch).switch_option_ocplibdir <- Some s),
+    "DIR Set ocplibdir for this switch";
+
+    (* formerly, -install-bin *)
+    "-bindir", Arg.String (fun s ->
+        (!current_switch).switch_option_bindir <- Some s),
+    "DIR Set bindir for this switch";
+
+  ]
+
+  let configure_args = [
+    "-switch", Arg.String (fun s -> select_switch s s),
+    "SWITCH Create/configure switch SWITCH";
+
+    "-remove", Arg.Tuple [Arg.Rest remove_switch;
+                          Arg.Unit (fun () -> exit 0)],
+    "SWITCHES Remove these switches and exit";
+
+  ] @ switch_args
+
+  let save () =
+    assert false; (* TODO: save the switch configs *)
+    ()
+
+  let init () =
+    assert false; (* TODO: create the default switch *)
+    save ();
+    ()
+
+  let load () =
+    load_switches ();
+    configure_args
+
+  end
+
 
 module type INTERFACE = sig
 
-  (* find OCaml bindir, i.e. first directory in path containing either
-     "ocamlc" or "ocamlc.exe" *)
-  val find_ocamlbin_in_path : string list -> string option
-  val find_ocamlbin : unit -> string option
+  (* dirname of OCaml command *)
+  val find_ocamlbin_in_path : string -> string list -> string option
+  val find_ocamlbin : string -> string option
 
   (* [detect_ocaml ocamlbin] detects the switch config corresponding
      to binaries in the ocamlbin directory. Check that all the
      binaries have the same version, and prefer native-code binaries
      to bytecode binaries. Check if ocamlrun should be specified
      to execute bytecode programs. *)
-  val detect_ocaml : string -> switch_config option
+  val detect_ocaml : switch_config_options -> switch_config option
+
+  val search_path : switch_config -> string list
+
 end
 
 module IMPLEMENTATION : INTERFACE = struct
 
-  let find_ocamlbin_in_path path =
+  let find_ocamlbin_in_path ocamlc path =
     match BuildConfig.find_first_in_path path (fun _ -> true)
-            [ "ocamlc"; "ocamlc.exe" ] with
-    |  None -> None
+            [ ocamlc; ocamlc ^ ".exe" ] with
+    | None -> None
     | Some ocamlc -> Some (Filename.dirname ocamlc)
 
-  let find_ocamlbin () =
-    find_ocamlbin_in_path (BuildConfig.get_PATH ())
+  let find_ocamlbin ocamlc =
+    find_ocamlbin_in_path ocamlc (BuildConfig.get_PATH ())
 
 
   type ocaml_config = {
@@ -255,11 +402,18 @@ let ocamlmklib_cmd = (
 
   let find_ocaml_command switch_version switch_ocamlbin cmd =
     let (cmds_opt, cmds_byte, checkers) = cmd in
+    assert false; (* TODO *)
     None
 
   exception MissingCommand of string
   exception WrongOutput of string list
-  let detect_ocaml switch_ocamlbin =
+  let detect_ocaml switch_options =
+
+    let switch_ocamlbin = match switch_options.switch_option_ocamlbin with
+      | None -> assert false (* TODO: detect ${toolchain}+ocamlc *)
+      | Some ocamlbin -> ocamlbin
+    in
+
     (* 1. find ocamlrun *)
     let switch_ocamlrun =
       match find_command switch_ocamlbin [ "ocamlrun" ] with
@@ -315,6 +469,11 @@ let ocamlmklib_cmd = (
     let switch_ocamlmklib = find_ocaml_command switch_version switch_ocamlbin
         ocamlmklib_cmd in
 
+    let switch_ocamlfind = assert false in  (* TODO *)
+    let switch_bindir = assert false in (* TODO *)
+    let switch_ocamldir = assert false in (* TODO *)
+    let switch_metadir = assert false in (* TODO *)
+
     Some {
       switch_ocamlbin;
       switch_version;
@@ -340,8 +499,41 @@ let ocamlmklib_cmd = (
       switch_ext_lib = cfg.ocaml_ext_lib;
       switch_ext_dll = cfg.ocaml_ext_dll;
       switch_os_type = cfg.ocaml_os_type;
+
+      switch_ocamlfind;
+      switch_bindir;
+      switch_ocamldir;
+      switch_metadir;
     }
+
+
+  let path_sep =
+    match Sys.os_type with
+      "Win32" -> ';'
+    | _ -> ':'
+
+  let split_path path =
+    OcpString.split path path_sep
+
+  let search_path sc =
+    (try
+       [Sys.getenv "OCPBUILD_OCAMLDIR"]
+     with Not_found -> []) @
+    (try
+       split_path (Sys.getenv "OCPBUILD_PATH")
+     with Not_found -> []) @
+    (try
+       split_path (Sys.getenv "OCAMLPATH")
+     with Not_found -> []) @
+    (match sc.switch_ocamlfind with
+     | Some so -> so.ocamlfind_path
+     | None ->
+       try
+         [Sys.getenv "OCAMLFIND_METADIR"]
+       with Not_found -> []
+    ) @
+    [sc.switch_ocamllib]
 
 end
 
-include IMPLEMENTATION
+include (IMPLEMENTATION : INTERFACE)

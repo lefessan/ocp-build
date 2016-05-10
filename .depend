@@ -538,6 +538,30 @@ tools/ocp-build/buildOCamlSyntaxes.cmx : libs/ocplib-lang/stringSet.cmx \
     tools/ocp-build/buildMisc.cmx tools/ocp-build/buildGlobals.cmx \
     tools/ocp-build/buildEngineTypes.cmx tools/ocp-build/buildEngineRules.cmx \
     tools/ocp-build/buildOCamlSyntaxes.cmi
+tools/ocp-build/buildOCamlInstall.cmo : \
+    libs/ocplib-compat/string-compat/stringCompat.cmo \
+    libs/ocplib-unix/minUnix.cmi tools/ocp-build/metaTypes.cmi \
+    tools/ocp-build/metaFile.cmi libs/ocplib-system/file.cmi \
+    tools/ocp-build/buildValue.cmi tools/ocp-build/buildTypes.cmi \
+    tools/ocp-build/buildOptions.cmi tools/ocp-build/buildOCamlTypes.cmi \
+    tools/ocp-build/buildOCamlGlobals.cmo \
+    tools/ocp-build/buildOCamlConfig.cmi tools/ocp-build/buildOCPTypes.cmi \
+    tools/ocp-build/buildOCPTree.cmi tools/ocp-build/buildMisc.cmo \
+    tools/ocp-build/buildEngineTypes.cmi \
+    tools/ocp-build/buildEngineGlobals.cmi \
+    tools/ocp-build/buildOCamlInstall.cmi
+tools/ocp-build/buildOCamlInstall.cmx : \
+    libs/ocplib-compat/string-compat/stringCompat.cmx \
+    libs/ocplib-unix/minUnix.cmx tools/ocp-build/metaTypes.cmx \
+    tools/ocp-build/metaFile.cmx libs/ocplib-system/file.cmx \
+    tools/ocp-build/buildValue.cmx tools/ocp-build/buildTypes.cmx \
+    tools/ocp-build/buildOptions.cmx tools/ocp-build/buildOCamlTypes.cmx \
+    tools/ocp-build/buildOCamlGlobals.cmx \
+    tools/ocp-build/buildOCamlConfig.cmx tools/ocp-build/buildOCPTypes.cmx \
+    tools/ocp-build/buildOCPTree.cmx tools/ocp-build/buildMisc.cmx \
+    tools/ocp-build/buildEngineTypes.cmx \
+    tools/ocp-build/buildEngineGlobals.cmx \
+    tools/ocp-build/buildOCamlInstall.cmi
 tools/ocp-build/buildOCamlRules.cmo : libs/ocplib-lang/stringSubst.cmi \
     libs/ocplib-lang/stringMap.cmi \
     libs/ocplib-compat/string-compat/stringCompat.cmo \
@@ -578,30 +602,6 @@ tools/ocp-build/buildOCamlRules.cmx : libs/ocplib-lang/stringSubst.cmx \
     tools/ocp-build/buildEngineGlobals.cmx \
     tools/ocp-build/buildEngineContext.cmx \
     tools/ocp-build/buildOCamlRules.cmi
-tools/ocp-build/buildOCamlInstall.cmo : \
-    libs/ocplib-compat/string-compat/stringCompat.cmo \
-    libs/ocplib-unix/minUnix.cmi tools/ocp-build/metaTypes.cmi \
-    tools/ocp-build/metaFile.cmi libs/ocplib-system/file.cmi \
-    tools/ocp-build/buildValue.cmi tools/ocp-build/buildTypes.cmi \
-    tools/ocp-build/buildOptions.cmi tools/ocp-build/buildOCamlTypes.cmi \
-    tools/ocp-build/buildOCamlGlobals.cmo \
-    tools/ocp-build/buildOCamlConfig.cmi tools/ocp-build/buildOCPTypes.cmi \
-    tools/ocp-build/buildOCPTree.cmi tools/ocp-build/buildMisc.cmo \
-    tools/ocp-build/buildEngineTypes.cmi \
-    tools/ocp-build/buildEngineGlobals.cmi \
-    tools/ocp-build/buildOCamlInstall.cmi
-tools/ocp-build/buildOCamlInstall.cmx : \
-    libs/ocplib-compat/string-compat/stringCompat.cmx \
-    libs/ocplib-unix/minUnix.cmx tools/ocp-build/metaTypes.cmx \
-    tools/ocp-build/metaFile.cmx libs/ocplib-system/file.cmx \
-    tools/ocp-build/buildValue.cmx tools/ocp-build/buildTypes.cmx \
-    tools/ocp-build/buildOptions.cmx tools/ocp-build/buildOCamlTypes.cmx \
-    tools/ocp-build/buildOCamlGlobals.cmx \
-    tools/ocp-build/buildOCamlConfig.cmx tools/ocp-build/buildOCPTypes.cmx \
-    tools/ocp-build/buildOCPTree.cmx tools/ocp-build/buildMisc.cmx \
-    tools/ocp-build/buildEngineTypes.cmx \
-    tools/ocp-build/buildEngineGlobals.cmx \
-    tools/ocp-build/buildOCamlInstall.cmi
 tools/ocp-build/buildOCamlMeta.cmo : libs/ocplib-lang/stringMap.cmi \
     libs/ocplib-compat/string-compat/stringCompat.cmo \
     libs/ocplib-lang/ocpString.cmi tools/ocp-build/metaTypes.cmi \
@@ -634,16 +634,20 @@ tools/ocp-build/buildOCamlTest.cmx : libs/ocplib-lang/stringSubst.cmx \
     tools/ocp-build/buildOCPTypes.cmx tools/ocp-build/buildMisc.cmx \
     tools/ocp-build/buildEngineTypes.cmx tools/ocp-build/buildConfig.cmx \
     tools/ocp-build/buildOCamlTest.cmi
-tools/ocp-build/buildOasis.cmo : \
+tools/ocp-build/buildOCamlOasis.cmo : \
     libs/ocplib-compat/string-compat/stringCompat.cmo \
     libs/ocplib-lang/ocpString.cmi libs/ocplib-lang/ocpGenlex.cmi \
     tools/ocp-build/buildValue.cmi tools/ocp-build/buildOCPTypes.cmi \
-    tools/ocp-build/buildOCPInterp.cmi tools/ocp-build/buildOasis.cmi
-tools/ocp-build/buildOasis.cmx : \
+    tools/ocp-build/buildOCPInterp.cmi tools/ocp-build/buildOCamlOasis.cmi
+tools/ocp-build/buildOCamlOasis.cmx : \
     libs/ocplib-compat/string-compat/stringCompat.cmx \
     libs/ocplib-lang/ocpString.cmx libs/ocplib-lang/ocpGenlex.cmx \
     tools/ocp-build/buildValue.cmx tools/ocp-build/buildOCPTypes.cmx \
-    tools/ocp-build/buildOCPInterp.cmx tools/ocp-build/buildOasis.cmi
+    tools/ocp-build/buildOCPInterp.cmx tools/ocp-build/buildOCamlOasis.cmi
+tools/ocp-build/buildOCamlPlugin.cmo : tools/ocp-build/buildTypes.cmi \
+    tools/ocp-build/buildOCamlRules.cmi tools/ocp-build/buildOCamlPlugin.cmi
+tools/ocp-build/buildOCamlPlugin.cmx : tools/ocp-build/buildTypes.cmx \
+    tools/ocp-build/buildOCamlRules.cmx tools/ocp-build/buildOCamlPlugin.cmi
 tools/ocp-build/buildArgs.cmo : \
     libs/ocplib-compat/string-compat/stringCompat.cmo \
     libs/ocplib-lang/ocpString.cmi libs/ocplib-unix/minUnix.cmi \
@@ -683,9 +687,8 @@ tools/ocp-build/buildActionBuild.cmo : libs/ocplib-lang/stringMap.cmi \
     tools/ocp-build/buildVersion.cmo tools/ocp-build/buildValue.cmi \
     tools/ocp-build/buildUninstall.cmi tools/ocp-build/buildTypes.cmi \
     tools/ocp-build/buildTerm.cmi tools/ocp-build/buildSubst.cmi \
-    tools/ocp-build/buildOptions.cmi tools/ocp-build/buildOasis.cmi \
-    tools/ocp-build/buildOCamlVariables.cmo \
-    tools/ocp-build/buildOCamlRules.cmi tools/ocp-build/buildOCamlMeta.cmi \
+    tools/ocp-build/buildOptions.cmi tools/ocp-build/buildOCamlVariables.cmo \
+    tools/ocp-build/buildOCamlPlugin.cmi tools/ocp-build/buildOCamlMeta.cmi \
     tools/ocp-build/buildOCamlInstall.cmi \
     tools/ocp-build/buildOCamlConfig.cmi tools/ocp-build/buildOCPTypes.cmi \
     tools/ocp-build/buildOCPTree.cmi tools/ocp-build/buildOCPPrinter.cmi \
@@ -705,9 +708,8 @@ tools/ocp-build/buildActionBuild.cmx : libs/ocplib-lang/stringMap.cmx \
     tools/ocp-build/buildVersion.cmx tools/ocp-build/buildValue.cmx \
     tools/ocp-build/buildUninstall.cmx tools/ocp-build/buildTypes.cmx \
     tools/ocp-build/buildTerm.cmx tools/ocp-build/buildSubst.cmx \
-    tools/ocp-build/buildOptions.cmx tools/ocp-build/buildOasis.cmx \
-    tools/ocp-build/buildOCamlVariables.cmx \
-    tools/ocp-build/buildOCamlRules.cmx tools/ocp-build/buildOCamlMeta.cmx \
+    tools/ocp-build/buildOptions.cmx tools/ocp-build/buildOCamlVariables.cmx \
+    tools/ocp-build/buildOCamlPlugin.cmx tools/ocp-build/buildOCamlMeta.cmx \
     tools/ocp-build/buildOCamlInstall.cmx \
     tools/ocp-build/buildOCamlConfig.cmx tools/ocp-build/buildOCPTypes.cmx \
     tools/ocp-build/buildOCPTree.cmx tools/ocp-build/buildOCPPrinter.cmx \
@@ -908,15 +910,18 @@ tools/ocp-build/buildOCamldep.cmi : tools/ocp-build/buildValue.cmi \
     tools/ocp-build/buildOCamlTypes.cmi tools/ocp-build/buildEngineTypes.cmi
 tools/ocp-build/buildOCamlSyntaxes.cmi : tools/ocp-build/buildValue.cmi \
     tools/ocp-build/buildOCamlTypes.cmi tools/ocp-build/buildEngineTypes.cmi
+tools/ocp-build/buildOCamlInstall.cmi : tools/ocp-build/buildTypes.cmi \
+    tools/ocp-build/buildOptions.cmi tools/ocp-build/buildOCamlConfig.cmi
 tools/ocp-build/buildOCamlRules.cmi : tools/ocp-build/buildTypes.cmi \
     tools/ocp-build/buildOptions.cmi tools/ocp-build/buildOCamlConfig.cmi \
     tools/ocp-build/buildOCPTypes.cmi
-tools/ocp-build/buildOCamlInstall.cmi : tools/ocp-build/buildTypes.cmi \
-    tools/ocp-build/buildOptions.cmi tools/ocp-build/buildOCamlConfig.cmi
 tools/ocp-build/buildOCamlMeta.cmi : tools/ocp-build/buildOCPInterp.cmi
 tools/ocp-build/buildOCamlTest.cmi : tools/ocp-build/buildTypes.cmi \
     tools/ocp-build/buildEngineTypes.cmi
-tools/ocp-build/buildOasis.cmi : tools/ocp-build/buildOCPInterp.cmi
+tools/ocp-build/buildOCamlOasis.cmi : tools/ocp-build/buildOCPInterp.cmi
+tools/ocp-build/buildOCamlPlugin.cmi : tools/ocp-build/buildTypes.cmi \
+    tools/ocp-build/buildOptions.cmi tools/ocp-build/buildOCamlConfig.cmi \
+    tools/ocp-build/buildOCPTypes.cmi
 tools/ocp-build/buildActions.cmi : libs/ocplib-system/file.cmi \
     tools/ocp-build/buildOptions.cmi tools/ocp-build/buildOCamlConfig.cmi
 tools/ocp-build/buildActionBuild.cmi : \

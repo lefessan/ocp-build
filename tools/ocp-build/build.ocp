@@ -144,19 +144,21 @@ begin library "ocp-build-ocaml-plugin"
     "buildOCamlTest.ml";
 
     (*    "buildOCFGen.ml"; *)
-    "buildAutogen.ml";           (* Generate .ocp from directory content *)
+    (*    "buildAutogen.ml";   (* Generate .ocp from directory content *) *)
+    "buildOCamlOasis.ml"
 
     "buildOCamlPlugin.ml";
   ]
   requires = [ "ocp-build-lib" "ocplib-ocamlfind" ]
 end
 
+(*
 begin library "ocp-build-oasis"
   files = [
-    "buildOasis.ml"
   ]
   requires = [ "ocp-build-project" ]
 end
+*)
 
 begin program "ocp-build"
     (*  asmlink += [ "-cclib" "-v" ] *)
@@ -182,7 +184,7 @@ begin program "ocp-build"
   ]
   requires = [ "ocp-build-lib"
                  "ocp-build-ocaml-plugin"
-                 "ocp-build-oasis"
+                 (*                 "ocp-build-oasis" *)
              ]
 
 end

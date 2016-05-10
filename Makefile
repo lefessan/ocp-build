@@ -104,7 +104,8 @@ BUILD_OCAML= $(OCP_BUILD_SRCDIR)/buildOCamlConfig.ml	\
     $(OCP_BUILD_SRCDIR)/buildOCamlRules.ml		\
     $(OCP_BUILD_SRCDIR)/buildOCamlMeta.ml		\
     $(OCP_BUILD_SRCDIR)/buildOCamlTest.ml		\
-    $(OCP_BUILD_SRCDIR)/buildOasis.ml
+    $(OCP_BUILD_SRCDIR)/buildOCamlOasis.ml		\
+    $(OCP_BUILD_SRCDIR)/buildOCamlPlugin.ml
 
 BUILD_MAIN= $(OCP_BUILD_SRCDIR)/buildArgs.ml	\
     $(OCP_BUILD_SRCDIR)/buildActions.ml		\
@@ -169,6 +170,7 @@ ocp-build.byte: $(OCP_BUILD_MLS) $(OCP_BUILD_CMOS) $(OCP_BUILD_STUBS)
 
 partialclean:
 	rm -f $(OCP_BUILD_TMPS) $(OCP_BUILD_CMIS) $(OCP_BUILD_CMOS) $(OCP_BUILD_CMXS) $(OCP_BUILD_OS)
+	find . -name '*.cm?' -exec rm -f {} \;
 
 clean: partialclean
 	rm -f $(OCP_BUILD_BOOTER) ocp-build.byte

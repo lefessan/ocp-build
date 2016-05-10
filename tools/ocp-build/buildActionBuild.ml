@@ -107,7 +107,7 @@ let do_load_project_files cin project_dir state =
 
   let nerrors =
     if !oasis_arg then
-      BuildOasis.load_project state "_oasis"
+      BuildOCamlOasis.load_project state "_oasis"
     else
       begin
       if !force_scan then begin
