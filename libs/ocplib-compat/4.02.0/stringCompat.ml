@@ -39,4 +39,8 @@ module StringMap = struct
     let list = ref [] in
     iter (fun x y -> list := x :: !list) map;
     List.rev !list
+  let to_list_of_values map =
+    let list = ref [] in
+    iter (fun x y -> list := y :: !list) map;
+    List.rev !list
 end
