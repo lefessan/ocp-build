@@ -38,10 +38,7 @@ module StringSet = struct
     List.rev !list
 end
 
-let do_install bc dest_dir where install_what
-    projects
-    package_map
-  =
+let do_install bc dest_dir projects package_map =
 
   let install_dirs = ref StringSet.empty in
   List.iter (fun p ->
@@ -74,7 +71,6 @@ let do_install bc dest_dir where install_what
       Printf.printf "Packages %s are already installed, removing first...\n"
         names;
       let state =
-        let open BuildOCamlInstall in
         BuildUninstall.init dest_dir install_dirs
       in
       List.iter
@@ -140,10 +136,16 @@ let do_install bc dest_dir where install_what
       BuildMisc.clean_exit 2
     end
 
+
+let destdir = ref None
+
 let arg_list =
   BuildOptions.merge
     [
       [
+        "-install-destdir", Arg.String (fun s -> destdir := Some s),
+        "DESTDIR Directory to override destination root";
+
   "-install-bundle", Arg.String (fun s ->
     Printf.eprintf "Warning: option -install-bundle is obsolete\n%!"
     ),
@@ -160,10 +162,7 @@ let action () =
   let p = BuildActions.load_project () in
   let (bc, projects,package_map) = BuildActionBuild.do_build p in
 
-  let install_where = BuildOCamlInstall.install_where p.cin p.cout in
-  let install_what = BuildOCamlInstall.install_what () in
-  do_install bc install_where.BuildOCamlInstall.install_destdir
-    install_where install_what projects package_map;
+  do_install bc !destdir projects package_map;
   ()
 
 

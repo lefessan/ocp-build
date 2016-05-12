@@ -18,9 +18,7 @@
 (*  SOFTWARE.                                                             *)
 (**************************************************************************)
 
-
-(* ocp-build uninstall [OPTIONS]
-*)
+(* ocp-build uninstall [OPTIONS] *)
 
 open StringCompat
 
