@@ -18,36 +18,36 @@
 (*  SOFTWARE.                                                             *)
 (**************************************************************************)
 
+open StringCompat
 open BuildTypes
 
-let plugin =
-  let module PluginArg : BuildTypes.PluginArg = struct
-    let name = "OCaml"
-    let ident = "ocaml"
-    let uninstall_path () =
-      (* TODO : use detected config *)
-      (try
-         let opam_prefix = Sys.getenv "OPAM_PREFIX" in
-         [Filename.concat opam_prefix "lib"]
-       with Not_found -> []) @
-      (try
-         [Sys.getenv "OCAMLLIB"]
-      with Not_found -> [])
+let plugins = ref StringMap.empty
+let active_plugins = ref StringMap.empty
 
-  end in
-  let module P = BuildPlugins.MakePlugin(PluginArg) in
+module MakePlugin(PluginArg: PluginArg) = struct
+
+  module Plugin = struct
+    include PluginArg
+  end
+
+  let plugin = (module Plugin: Plugin)
+  let () =
+    plugins := StringMap.add Plugin.name plugin !plugins
+end
+
+let dummy_plugin =
+  let module P = MakePlugin(struct
+      let name = "dummy"
+      let ident = name
+      let uninstall_path () = []
+    end) in
   P.plugin
 
-(* For now, very simple *)
-let create_switch plugin =
-  let module Switch : BuildTypes.Switch = struct
-    let plugin = plugin
-    let ident = ""
-    let name = "Default Switch"
-  end in
-  (module Switch : Switch)
+let default_plugin = ref dummy_plugin
+let set_default_plugin p = default_plugin := p
 
-let create_packages = BuildOCamlRules.create plugin
-
-let () =
-  BuildPlugins.set_default_plugin plugin
+let active_plugins () =
+  if StringMap.is_empty !active_plugins then
+    [ !default_plugin ]
+  else
+    StringMap.to_list_of_values !active_plugins

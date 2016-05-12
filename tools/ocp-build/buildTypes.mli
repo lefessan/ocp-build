@@ -95,10 +95,20 @@ type targets = {
   depends : package_info list;
 }
 
+module type PluginArg = sig
+  val name : string
+  val ident : string
+
+  val uninstall_path : unit -> string list
+end
+
 module type Plugin = sig
   val name : string
   val ident : string
+
+  val uninstall_path : unit -> string list
 end
+type plugin = (module Plugin)
 
 module type Switch = sig
   val name : string

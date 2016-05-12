@@ -99,6 +99,8 @@ begin library "ocp-build-lib"
     "buildConfig.ml";           (* Values stored in the configuration file. *)
 
     "buildUninstall.ml";
+
+    "buildPlugins.ml";
   ]
 
   requires = [ "ocplib-unix"; "ocp-build-engine"; "ocp-build-project";

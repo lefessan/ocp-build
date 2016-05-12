@@ -18,36 +18,12 @@
 (*  SOFTWARE.                                                             *)
 (**************************************************************************)
 
-open BuildTypes
+module MakePlugin :
+  functor (PluginArg : BuildTypes.PluginArg) ->
+  sig
+    module Plugin : BuildTypes.Plugin
+    val plugin : BuildTypes.plugin
+  end
 
-let plugin =
-  let module PluginArg : BuildTypes.PluginArg = struct
-    let name = "OCaml"
-    let ident = "ocaml"
-    let uninstall_path () =
-      (* TODO : use detected config *)
-      (try
-         let opam_prefix = Sys.getenv "OPAM_PREFIX" in
-         [Filename.concat opam_prefix "lib"]
-       with Not_found -> []) @
-      (try
-         [Sys.getenv "OCAMLLIB"]
-      with Not_found -> [])
-
-  end in
-  let module P = BuildPlugins.MakePlugin(PluginArg) in
-  P.plugin
-
-(* For now, very simple *)
-let create_switch plugin =
-  let module Switch : BuildTypes.Switch = struct
-    let plugin = plugin
-    let ident = ""
-    let name = "Default Switch"
-  end in
-  (module Switch : Switch)
-
-let create_packages = BuildOCamlRules.create plugin
-
-let () =
-  BuildPlugins.set_default_plugin plugin
+val set_default_plugin : BuildTypes.plugin -> unit
+val active_plugins : unit -> BuildTypes.plugin list

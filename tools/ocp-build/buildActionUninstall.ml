@@ -66,7 +66,7 @@ let arg_list = [
       destdir := Some s),
   "DIR Set root of installation dir";
 
-  "-install-lib", Arg.String (fun s ->
+  "-uninstall-path", Arg.String (fun s ->
       scandirs := s :: !scandirs),
   "DIR Scan directory for packages to uninstall";
 
@@ -83,17 +83,15 @@ let arg_list = [
 let action () =
 
   if !scandirs = [] then begin
-    try
-      let opam_prefix = Sys.getenv "OPAM_PREFIX" in
-      scandirs := [Filename.concat opam_prefix "lib"]
-    with Not_found ->
-      try
-        let ocamllib = Sys.getenv "OCAMLLIB" in
-        scandirs := [ocamllib]
-      with Not_found ->
+    let plugins = BuildPlugins.active_plugins () in
+    List.iter (fun p ->
+        let module P = (val p: BuildTypes.Plugin) in
+        scandirs := P.uninstall_path () @ !scandirs) plugins;
+    if !scandirs = [] then begin
         Printf.eprintf
-          "Error: you MUST at least use `-install-lib DIR` once.\n%!";
+          "Error: you MUST at least use `-uninstall-path DIR` once.\n%!";
         exit 2
+    end
   end;
 
   let targets = List.rev !targets_arg in
