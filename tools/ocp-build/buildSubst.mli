@@ -18,20 +18,21 @@
 (*  SOFTWARE.                                                             *)
 (**************************************************************************)
 
+open StringCompat
 
-(* open BuildBase *)
-
+(*
 val putenv : string -> string -> unit
+
 val add_to_global_subst : string -> string -> unit
 
-val subst : StringSubst.subst -> string -> string
+val subst : StringSubst.Gen.subst -> string -> string
 val subst_global : string -> string
 
-val global_subst : StringSubst.subst
-val add_to_local_subst : StringSubst.subst -> string -> string -> StringSubst.subst
-
+val global_subst : StringSubst.Gen.subst
+val add_to_local_subst : StringSubst.Gen.subst -> string -> string -> StringSubst.Gen.subst
+*)
 
 val create_substituter :
-  (string * ('a -> string)) list -> 'a StringSubst.M.subst
+  (string * ('a -> string)) list -> ('a -> string) StringMap.t
 val apply_substituter :
-  'a StringSubst.M.subst -> string -> 'a -> string
+  ('a -> string) StringMap.t -> string -> 'a -> string

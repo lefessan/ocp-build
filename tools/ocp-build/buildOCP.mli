@@ -57,8 +57,8 @@ val load_project_state : File.t -> project
 val find_obuild : (string -> unit) -> string -> unit
 
 
-val empty_config : unit -> BuildOCPInterp.config
-val generated_config : unit -> BuildOCPInterp.config
+val empty_config : (string * string) list -> BuildOCPInterp.config
+val generated_config : (string * string) list -> BuildOCPInterp.config
 
 val print_conflicts : project -> bool -> unit
 

@@ -58,9 +58,8 @@ let init_packages () =
   let packages = BuildOCPInterp.initial_state () in
   packages
 
-let empty_config () = BuildOCPInterp.empty_config (* !BuildValue.options *)
-let generated_config () =
-  BuildOCPInterp.generated_config (* !BuildValue.options *)
+let empty_config list = BuildOCPInterp.empty_config list
+let generated_config list = BuildOCPInterp.generated_config list
 
 let print_loaded_ocp_files = ref false
 (* let print_dot_packages = ref (Some "_obuild/packages.dot") *)

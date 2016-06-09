@@ -134,7 +134,7 @@ let do_list_packages pj =
 
 let action () =
   let p = BuildActions.load_project () in
-  let state = BuildActionBuild.do_read_env p in
+  let state, _initial_bindings = BuildActionBuild.do_read_env p in
 
     time_step "Sorting packages...";
     let pj = BuildOCP.verify_packages state in

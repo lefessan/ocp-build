@@ -91,10 +91,5 @@ end
 
 open TYPES
 
-(*
-val arg_list : unit -> (string * Arg.spec * string) list
-val load_global_config : File.t -> unit
-*)
-
 val check_config : BuildOptions.config_input -> config_output
-val set_global_config : config_output -> unit
+val set_global_config : config_output -> (string * string) list

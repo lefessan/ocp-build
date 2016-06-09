@@ -74,6 +74,7 @@ type build_rule = {
   mutable rule_missing_sources : int;
 
   rule_context : build_context;
+  mutable rule_subst : (string -> string);
 }
 
 and dependency_loader =  string -> (string * string list list) list

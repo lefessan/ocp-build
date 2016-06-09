@@ -93,7 +93,7 @@ let begin_command b proc =
     | Some cmd -> cmd
   in
   let cmd_args =
-    (BuildEngineRules.command_of_command cmd) @ List.map (BuildEngineRules.argument_of_argument r) cmd.cmd_args
+    (BuildEngineRules.command_of_command r cmd) @ List.map (BuildEngineRules.argument_of_argument r) cmd.cmd_args
   in
   if verbose 1 && term.esc_ansi then print_stat_line b proc else
     if verbose 2 then begin
@@ -150,7 +150,7 @@ let end_command b proc time status =
   | Some cmd ->
     let r = proc.proc_rule in
     let cmd_args =
-      (BuildEngineRules.command_of_command cmd)
+      (BuildEngineRules.command_of_command r cmd)
       @ List.map (BuildEngineRules.argument_of_argument r) cmd.cmd_args
     in
     let has_stderr = (MinUnix.stat (temp_stderr b r)).MinUnix.st_size > 0 in
@@ -296,7 +296,7 @@ and eprint_rule indent r =
     Printf.eprintf "%s  SOURCE F%d %s%s\n" indent file.file_id (file_filename file)
       (if file.file_exists then "(exists)" else "(not available)")
   ) r.rule_sources;
-  List.iter (eprint_command (indent ^ "    ")) r.rule_commands;
+  List.iter (eprint_command (indent ^ "    ") r) r.rule_commands;
   IntMap.iter (fun _ file ->
     Printf.eprintf "%s  TARGET F%d %s\n" indent file.file_id (file_filename file)
   ) r.rule_targets;
@@ -305,7 +305,7 @@ and eprint_rule indent r =
   ) r.rule_temporaries;
   ()
 
-and eprint_command indent cmd =
+and eprint_command indent r cmd =
   match cmd with
   | Execute cmd ->
     begin match cmd.cmd_move_to_dir with
@@ -313,7 +313,7 @@ and eprint_command indent cmd =
     | Some chdir ->
       Printf.eprintf "%scd %S\n" indent chdir;
     end;
-    Printf.eprintf "%s%s %s" indent  (String.concat " " cmd.cmd_command) (String.concat " " (List.map string_of_argument cmd.cmd_args));
+    Printf.eprintf "%s%s %s" indent  (String.concat " " cmd.cmd_command) (String.concat " " (List.map (string_of_argument r) cmd.cmd_args));
     begin
       match cmd.cmd_stdin_pipe with
         None -> ()
@@ -337,12 +337,12 @@ and eprint_command indent cmd =
     Printf.eprintf "%sLoad dependencies from %s for %d\n" indent
       (file_filename file) r.rule_id
   | Copy (f1, f2) ->
-    Printf.eprintf "%sCopy %s to %s\n" indent (string_of_argument f1) (string_of_argument f2)
+    Printf.eprintf "%sCopy %s to %s\n" indent (string_of_argument r f1) (string_of_argument r f2)
   | Move (_, f1, f2) ->
-    Printf.eprintf "%sRename %s to %s\n" indent (string_of_argument f1) (string_of_argument f2)
+    Printf.eprintf "%sRename %s to %s\n" indent (string_of_argument r f1) (string_of_argument r f2)
   | MoveIfExists (f1, f2, _link) ->
     if verbose 4 then
-      Printf.eprintf "%sRename? %s to %s\n" indent (string_of_argument f1) (string_of_argument f2)
+      Printf.eprintf "%sRename? %s to %s\n" indent (string_of_argument r f1) (string_of_argument r f2)
   | DynamicAction (s,_) ->
     Printf.eprintf "%sDynamicAction %s\n" indent s
   | NeedTempDir ->

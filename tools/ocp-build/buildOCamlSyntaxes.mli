@@ -22,7 +22,7 @@
 val get_pp :
   BuildOCamlTypes.ocaml_package ->
   string -> (* source basename *)
-  BuildValue.Types.env ->
+  BuildValue.Types.env list ->
   BuildOCamlTypes.pp
 
 

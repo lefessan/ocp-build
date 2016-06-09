@@ -64,9 +64,8 @@ open BuildOCamlTypes
 open BuildOCamlVariables
 open BuildOCamlMisc
 
-let comp_deps lib options =
-  let options = [ options; lib.lib.lib_options ] in
-  let comp_requires =  comp_requires_option.get options in
+let comp_deps lib envs (* options *) =
+  let comp_requires =  comp_requires_option.get envs in
   BuildOCamlSyntaxes.get_tool_requires "comp" lib comp_requires
 
 let string_of_libloc lib =
@@ -284,43 +283,65 @@ let add_package_file lib filename =
     in
     add_file b dir (Filename.basename filename)
 
-let add_more_rule_sources lib r deps options =
-  let more_rule_sources =  rule_sources_option.get options
-    @  more_deps_option.get options  in
+let subst_envs envs s =
+  StringSubst.subst (fun var ->
+      BuildValue.get_string envs var
+    ) s
+
+let add_more_rule_sources lib envs r deps =
+  let more_rule_sources =  rule_sources_option.get envs
+    @  more_deps_option.get envs  in
   List.iter (fun s ->
-    let s = subst global_subst s in
+    let s = subst_envs envs s in
     let s = add_package_file lib s in
     add_rule_source r s
   ) more_rule_sources;
   List.iter (fun option ->
     List.iter (fun s ->
-      let s = subst global_subst s in
+      let s = subst_envs envs s in
       let s = add_package_file lib s in
       add_rule_source r s
-    ) (option.get options)
+    ) (option.get envs)
   ) deps
 
 (* override [new_rule] to add [lib_ready] *)
-let new_rule lib file cmds =
+let new_rule lib envs file cmds =
   let r = new_rule lib.lib.lib_context lib.lib.lib_loc file cmds in
   add_rule_sources r lib.lib.lib_ready;
+  BuildEngineRules.set_rule_subst r (fun s ->
+    (*    Printf.eprintf "    subst in new_rule(%S)\n%!" s; *)
+    try
+      let r = BuildValue.get_string envs s in
+      (*      Printf.eprintf "Found %S for %S\n%!" r s; *)
+      r
+    with _ ->
+      Printf.eprintf "Warning: no substitutions yet for %S\n%!" s;
+      "undefined"
+  );
   r
+    (*
+    (fun s ->
+       try
+         BuildValue.get_string [config.config_env] s;
+    );
+  r
+*)
 
-let add_c2o_rule b lib seq src_file target_file options =
+let add_c2o_rule b lib envs ptmp seq src_file target_file =
   let build_dir = add_directory b (MinUnix.getcwd ()) in
   let temp_file = BuildEngineContext.add_temp_file b build_dir target_file.file_basename in
-  let r = new_rule lib target_file
+  let r = new_rule lib envs target_file
     [Execute (new_command
 
-      ( ocamlcc_cmd.get options
+      ( ocamlcc_cmd.get envs
 (*
              (if bool_option_true lib.lib.lib_options byte_option then ocamlcc_cmd
              else ocamlopt_cmd) *)
                 )
       (c_includes lib @[
        S "-ccopt"; S
-                   (String.concat " " (cflags_option.get  options));
-       S "-ccopt"; S (String.concat " " ( ccopt_option.get options));
+                   (String.concat " " (cflags_option.get  envs));
+       S "-ccopt"; S (String.concat " " ( ccopt_option.get envs));
        S "-c"; S (file_filename src_file);
       ])
 );
@@ -340,7 +361,7 @@ let add_c2o_rule b lib seq src_file target_file options =
    ) options.options_vars;
   end;
 *)
-  add_more_rule_sources lib r [] options;
+  add_more_rule_sources lib envs r [];
   add_rule_source r src_file;
   add_rule_sources r seq;
   List.iter (fun dep ->
@@ -352,31 +373,27 @@ let add_c2o_rule b lib seq src_file target_file options =
   ) lib.lib.lib_requires;
   add_rule_temporary r temp_file
 
-let add_mll2ml_rule lib src_file target_file options =
+let add_mll2ml_rule lib envs ptmp src_file target_file =
 
-  let envs = [ options; lib.lib.lib_options ] in
-
-  let r = new_rule lib target_file
+  let r = new_rule lib envs target_file
     [Execute (new_command (ocamllex_cmd.get envs )
                 [ S "-o"; BF target_file; BF src_file])
     ]
   in
-  add_more_rule_sources lib r [ ocamllex_deps ] envs;
+  add_more_rule_sources lib envs r [ ocamllex_deps ];
   add_rule_source r src_file
 
-let add_mly2ml_rule b lib src_file ml_target_file mli_target_file options =
-
-  let envs = [ options; lib.lib.lib_options ] in
+let add_mly2ml_rule b lib envs ptmp src_file ml_target_file mli_target_file =
   let src_dir = src_file.file_dir in
   let temp_ml = BuildEngineContext.add_temp_file b src_dir ml_target_file.file_basename in
   let temp_mli = BuildEngineContext.add_temp_file b src_dir mli_target_file.file_basename in
-  let r = new_rule lib ml_target_file
+  let r = new_rule lib envs ml_target_file
     [Execute (new_command ( ocamlyacc_cmd.get envs) [BF src_file]);
      Move (false, BF temp_ml, BF ml_target_file);
      Move (false, BF temp_mli, BF mli_target_file);
     ]
   in
-  add_more_rule_sources lib r [ ocamlyacc_deps ] envs;
+  add_more_rule_sources lib envs r [ ocamlyacc_deps ];
   add_rule_source r src_file;
   add_rule_target r mli_target_file
 
@@ -398,51 +415,21 @@ let add_mly2ml_rule b lib src_file ml_target_file mli_target_file options =
 *)
 
 
-let add_nopervasives_flag options flags =
-  if nopervasives.get options then
-    (S "-nopervasives" ) :: flags
-  else flags
-
-let add_asmdebug_flag options flags =
-  if asmdebug_option.get options then
-    (S "-g" ) :: flags
-  else flags
-
-let add_bytedebug_flag options flags =
-  if asmdebug_option.get options then
-    (S "-g" ) :: flags
-  else flags
-
-let bytelinkflags lib =
-  let options = [lib.lib.lib_options] in
-  add_bytedebug_flag options (
-    add_nopervasives_flag options (
-      List.map argument_of_string  (bytelink_option.get options)
-    )
-  )
-let asmlinkflags lib =
-  let options = [lib.lib.lib_options] in
-  add_asmdebug_flag options (
-    add_nopervasives_flag options (
-      List.map argument_of_string (asmlink_option.get options )
-    )
-  )
-
-let depflags options =
-    List.map argument_of_string ( dep_option.get options)
-let bytecompflags options =
-  add_bytedebug_flag options (
-    add_nopervasives_flag options (
-    List.map argument_of_string ( bytecomp_option.get options)
+let depflags envs =
+    List.map argument_of_string ( dep_option.get envs)
+let bytecompflags envs =
+  BuildOCamlGlobals.add_bytedebug_flag envs (
+    BuildOCamlGlobals.add_nopervasives_flag envs (
+    List.map argument_of_string ( bytecomp_option.get envs)
     ))
-let docflags options =
-  add_nopervasives_flag options (
-    List.map argument_of_string ( doc_option.get options)
+let docflags envs =
+  BuildOCamlGlobals.add_nopervasives_flag envs (
+    List.map argument_of_string ( doc_option.get envs)
   )
-let asmcompflags options =
-  add_asmdebug_flag options (
-    add_nopervasives_flag options (
-    List.map argument_of_string (asmcomp_option.get options )
+let asmcompflags envs =
+  BuildOCamlGlobals.add_asmdebug_flag envs (
+    BuildOCamlGlobals.add_nopervasives_flag envs (
+    List.map argument_of_string (asmcomp_option.get envs )
     ))
 
 let needs_odoc lib =
@@ -451,8 +438,7 @@ let needs_odoc lib =
   | ProgramPackage | SyntaxPackage
   | TestPackage | RulesPackage -> false
 
-let add_ml2mldep_rule lib dst_dir pack_for force src_file target_file needs_odoc options =
-  let envs = [ options; lib.lib.lib_options ] in
+let add_ml2mldep_rule lib envs dst_dir pack_for force src_file target_file needs_odoc =
   let b = lib.lib.lib_context in
   let cmd = new_command (ocamldep_cmd.get envs)
     (depflags envs) in
@@ -468,10 +454,10 @@ let add_ml2mldep_rule lib dst_dir pack_for force src_file target_file needs_odoc
   add_command_strings cmd [file_filename src_file];
   add_command_pipe cmd (file_filename target_file);
 
-  let r = new_rule lib target_file [Execute cmd] in
+  let r = new_rule lib envs target_file [Execute cmd] in
 
 
-  add_more_rule_sources lib r [ ocamldep_deps ] envs;
+  add_more_rule_sources lib envs r [ ocamldep_deps ];
   add_rule_source r src_file;
   (* We don't need to have all the sources available ! Actually, the
      computation of dependencies is not done on the file-system, but on
@@ -498,9 +484,9 @@ let add_ml2mldep_rule lib dst_dir pack_for force src_file target_file needs_odoc
 
   let loader =
     BuildOCamldep.load_modules_dependencies
-      lib options force dst_dir pack_for needs_odoc
+      lib envs force dst_dir pack_for needs_odoc
   in
-  let r_loaded = new_rule lib mldep_file_loaded [] in
+  let r_loaded = new_rule lib envs mldep_file_loaded [] in
   add_rule_command r_loaded (LoadDeps (loader, target_file, r_loaded));
   r_loaded.rule_forced <- true; (* must be executed, even when no changes *)
   add_rule_source r_loaded target_file;
@@ -589,8 +575,8 @@ let sort_ocaml_files cmo_files =
 
 
 
-let add_files_to_link_to_command case cmd options cmx_files =
-  if sort_files_option.get options  then begin
+let add_files_to_link_to_command case cmd envs cmx_files =
+  if sort_files_option.get envs  then begin
     DynamicAction (
       (Printf.sprintf "sort for %s" case),
       lazy (
@@ -609,22 +595,19 @@ let add_files_to_link_to_command case cmd options cmx_files =
 
 
 
-let add_cmos2cma_rule lib ptmp cclib cmo_files cma_file =
+let add_cmos2cma_rule lib envs ptmp cclib cmo_files cma_file =
   if not lib.lib.lib_installed then
-    let options = [lib.lib.lib_options] in
 
-
-    let cmd = new_command (ocamlc_cmd.get options)
-      (bytelinkflags lib) in
+    let cmd = new_command (ocamlc_cmd.get envs) lib.lib_bytelink_flags in
     add_command_args cmd  [S "-a"; S "-o"; BF cma_file];
     if cclib <> "" then
       add_command_strings cmd [ "-custom" ; "-cclib"; cclib ];
-    if force_link_option.get options then
+    if force_link_option.get envs then
       add_command_strings cmd [ "-linkall" ];
 
-    let cmd = add_files_to_link_to_command "byte lib" cmd options cmo_files in
-    let r = new_rule lib cma_file [cmd] in
-    add_more_rule_sources lib r [ ocamlc_deps; bytelink_deps; link_deps ] options;
+    let cmd = add_files_to_link_to_command "byte lib" cmd envs cmo_files in
+    let r = new_rule lib envs cma_file [cmd] in
+    add_more_rule_sources lib envs r [ ocamlc_deps; bytelink_deps; link_deps ];
     add_rule_sources r cmo_files;
     add_rule_sources r !(ptmp.cmi_files)
 
@@ -640,14 +623,13 @@ let cross_update r list =
       Move (true, f1, f2)
      ) list)
 
-let add_cmxs2cmxa_rule b lib cclib cmi_files cmx_files cmxo_files stubs_files =
-  let options = [lib.lib.lib_options] in
+let add_cmxs2cmxa_rule b lib envs ptmp cclib cmi_files cmx_files cmxo_files stubs_files =
   let src_dir = lib.lib.lib_src_dir in
   let dst_dir = lib.lib.lib_dst_dir in
 
   let basename_cmxa = lib.lib_archive ^ ".cmxa" in
   let basename_cmxs = lib.lib_archive ^ ".cmxs" in
-  let ext_lib = BuildOCamlConfig.ocaml_config_ext_lib.get options  in
+  let ext_lib = BuildOCamlConfig.ocaml_config_ext_lib.get envs  in
   let basename_a = lib.lib_archive ^ ext_lib in
 
   let cmxa_file = add_dst_file b dst_dir basename_cmxa in
@@ -659,47 +641,48 @@ let add_cmxs2cmxa_rule b lib cclib cmi_files cmx_files cmxo_files stubs_files =
     (* Build the cmxa *)
     let temp_cmxa = add_temp_file b src_dir basename_cmxa in
 
-    let r = new_rule lib cmxa_file [] in
+    let r = new_rule lib envs cmxa_file [] in
 
     let temp_a = add_temp_file b src_dir basename_a in
 
     begin
-      let cmd = new_command (ocamlopt_cmd.get options ) (asmlinkflags lib) in
+      let cmd = new_command (ocamlopt_cmd.get envs ) lib.lib_asmlink_flags in
       add_command_args cmd [S "-a"; S "-o"; BF temp_cmxa ];
       if cclib <> "" then
         add_command_strings cmd ["-cclib"; cclib];
-      if  force_link_option.get options then
+      if  force_link_option.get envs then
         add_command_strings cmd [ "-linkall" ];
 
-      let cmd = add_files_to_link_to_command "asm lib" cmd options cmx_files in
+      let cmd = add_files_to_link_to_command "asm lib" cmd envs cmx_files in
       add_rule_command r cmd;
       add_rule_target r a_file;
       add_rule_temporaries r [ temp_cmxa; temp_a ];
 
     end;
 
-    add_more_rule_sources lib r [ ocamlopt_deps; asmlink_deps; link_deps ] options;
+    add_more_rule_sources lib envs r [ ocamlopt_deps; asmlink_deps; link_deps ];
     add_rule_sources r cmx_files;
     add_rule_sources r cmxo_files;
     add_rule_sources r cmi_files;
 
-    if BuildValue.get_bool_with_default options "cmxs_plugin" true then begin
+    if BuildValue.get_bool_with_default envs "cmxs_plugin" true then begin
 
       let temp_cmxs = add_temp_file b src_dir basename_cmxs in
 
-      let cmd = new_command (ocamlopt_cmd.get options ) (asmlinkflags lib) in
+      let cmd = new_command (ocamlopt_cmd.get envs )
+          lib.lib_asmlink_flags in
       add_command_args cmd [S "-shared"; S "-I"; S lib.lib.lib_dst_dir.dir_fullname; S "-o"; BF temp_cmxs ];
       if cclib <> "" then add_command_strings cmd ["-cclib"; cclib];
-      if force_link_option.get options then
+      if force_link_option.get envs then
         add_command_strings cmd [ "-linkall" ];
 
-      let cmd = add_files_to_link_to_command "cmxs lib" cmd options cmx_files in
+      let cmd = add_files_to_link_to_command "cmxs lib" cmd envs cmx_files in
 (*      add_command_args cmd [BF temp_cmxa]; *)
 
       add_rule_command r cmd;
       add_rule_target r cmxs_file;
       add_rule_temporaries r [ temp_cmxs ];
-      add_more_rule_sources lib r [ ocamlopt_deps; asmlink_deps; link_deps ] options;
+      add_more_rule_sources lib envs r [ ocamlopt_deps; asmlink_deps; link_deps ];
       add_rule_sources r stubs_files; (* TODO: as we introduce this new dependency, we might want to
        split generation of .cmxa from .cmxs to be able to do them in parallel *)
       cross_move r [
@@ -715,20 +698,19 @@ let add_cmxs2cmxa_rule b lib cclib cmi_files cmx_files cmxo_files stubs_files =
 
 
 
-let add_odocs2html_rule lib odoc_files docdir html_file =
+let add_odocs2html_rule lib envs odoc_files docdir html_file =
   if not lib.lib.lib_installed then
-    let options = [lib.lib.lib_options] in
-    let cmd = new_command (ocamldoc_cmd.get options ) [] in
+    let cmd = new_command (ocamldoc_cmd.get envs ) [] in
     List.iter (fun odoc_file ->
       add_command_args cmd [S "-load"; BF odoc_file]
     ) odoc_files;
     add_command_args cmd [S "-html";S "-d"; BD docdir];
 
-    let r = new_rule lib html_file [Execute cmd] in
-    add_more_rule_sources lib r [ ocamldoc_deps ] options;
+    let r = new_rule lib envs html_file [Execute cmd] in
+    add_more_rule_sources lib envs r [ ocamldoc_deps ];
     add_rule_sources r odoc_files
 
-let get_link_order lib =
+let get_link_order lib envs =
     let tolink =
       List.fold_right (fun pd links ->
         if pd.dep_link then
@@ -739,7 +721,7 @@ let get_link_order lib =
       lib.lib.lib_requires []
     in
     let tolink =
-      let link_order = BuildValue.get_strings_with_default [lib.lib.lib_options] "link_order"
+      let link_order = BuildValue.get_strings_with_default envs "link_order"
           [] in
       if link_order = [] then tolink else
         let map = List.fold_left (fun map lib ->
@@ -755,15 +737,10 @@ let get_link_order lib =
     in
     tolink
 
-let add_cmos2byte_rule lib ptmp linkflags cclib cmo_files o_files byte_file =
+let add_cmos2byte_rule lib envs ptmp linkflags cclib cmo_files o_files byte_file =
   if not lib.lib.lib_installed then
-    let options = [lib.lib.lib_options] in
-    (*
-      let src_dir = lib.lib.lib_src_dir in
-      let dst_dir = lib.lib.lib_dst_dir in
-    *)
 
-    let cmd = new_command (ocamlc_cmd.get  options ) linkflags in
+    let cmd = new_command (ocamlc_cmd.get  envs ) linkflags in
     add_command_args cmd [S "-o"; BF byte_file];
     let custom = ref false in
     List.iter (fun o_file ->
@@ -773,7 +750,7 @@ let add_cmos2byte_rule lib ptmp linkflags cclib cmo_files o_files byte_file =
       add_command_args cmd [S "-cclib"; S cclib ];
     add_command_strings cmd (command_includes lib []);
 
-    let tolink = get_link_order lib in
+    let tolink = get_link_order lib envs in
 
     (*    Printf.eprintf "to_link for %S\n%!"  lib.lib_name; *)
     List.iter (fun lib2 ->
@@ -787,7 +764,7 @@ let add_cmos2byte_rule lib ptmp linkflags cclib cmo_files o_files byte_file =
           custom := true;
           add_command_args cmd [file_filename a_file]
           ) lib2.lib_clink_deps; *)
-        add_command_args cmd (bytelinkflags lib2);
+        add_command_args cmd lib2.lib_bytelink_flags;
         if not lib2.lib.lib_meta &&
           (lib2.lib.lib_installed || lib2.lib_byte_targets <> []) then begin
             add_command_args cmd
@@ -803,7 +780,7 @@ let add_cmos2byte_rule lib ptmp linkflags cclib cmo_files o_files byte_file =
           end;
       | ObjectsPackage ->
         (*            Printf.eprintf "Depends on %s\n%!" lib2.lib_name; *)
-        add_command_args cmd (bytelinkflags lib2);
+        add_command_args cmd lib2.lib_bytelink_flags;
         List.iter (fun a_file ->
           custom := true;
           add_command_args cmd [BF a_file]
@@ -816,9 +793,9 @@ let add_cmos2byte_rule lib ptmp linkflags cclib cmo_files o_files byte_file =
     ) tolink;
     if !custom then add_command_string cmd "-custom";
 
-    let cmd = add_files_to_link_to_command "byte prog" cmd options cmo_files in
-    let r = new_rule lib byte_file [cmd] in
-    add_more_rule_sources lib r [ ocamlc_deps; bytelink_deps; link_deps ] options;
+    let cmd = add_files_to_link_to_command "byte prog" cmd envs cmo_files in
+    let r = new_rule lib envs byte_file [cmd] in
+    add_more_rule_sources lib envs r [ ocamlc_deps; bytelink_deps; link_deps ];
 
     add_rule_sources r cmo_files;
     add_rule_sources r !(ptmp.cmi_files);
@@ -833,14 +810,9 @@ let add_cmos2byte_rule lib ptmp linkflags cclib cmo_files o_files byte_file =
     ) lib.lib.lib_requires
 
 
-let add_cmxs2asm_rule lib ptmp linkflags cclib cmx_files cmxo_files o_files opt_file =
+let add_cmxs2asm_rule lib envs ptmp linkflags cclib cmx_files cmxo_files o_files opt_file =
   if  not lib.lib.lib_installed then
-    let options = [lib.lib.lib_options] in
-    (*
-      let src_dir = lib.lib.lib_src_dir in
-      let dst_dir = lib.lib.lib_dst_dir in
-    *)
-    let cmd = new_command (ocamlopt_cmd.get  options ) linkflags in
+    let cmd = new_command (ocamlopt_cmd.get envs ) linkflags in
     add_command_args cmd [S "-o"; BF opt_file];
     if cclib <> "" then
       add_command_args cmd [S "-cclib"; S cclib];
@@ -848,14 +820,14 @@ let add_cmxs2asm_rule lib ptmp linkflags cclib cmx_files cmxo_files o_files opt_
       add_command_arg cmd (BF o_file)) o_files;
     add_command_strings cmd (command_includes lib []);
 
-    let tolink = get_link_order lib in
+    let tolink = get_link_order lib envs in
     (*    Printf.eprintf "To link %S:\n%!" lib.lib_name; *)
     List.iter (fun lib2 ->
       (*      Printf.eprintf "  Lib %S\n%!" lib2.lib_name; *)
       match lib2.lib.lib_type with
       | TestPackage -> assert false
       | LibraryPackage ->
-        add_command_args cmd (asmlinkflags lib2);
+        add_command_args cmd lib2.lib_asmlink_flags;
         List.iter (fun a_file ->
           add_command_arg cmd (BF a_file)
         ) lib2.lib_clink_deps;
@@ -869,7 +841,7 @@ let add_cmxs2asm_rule lib ptmp linkflags cclib cmx_files cmxo_files o_files opt_
               [S (lib2.lib_archive ^ ".cmxa")]
           );
       | ObjectsPackage ->
-        add_command_args cmd (asmlinkflags lib2);
+        add_command_args cmd lib2.lib_asmlink_flags;
         List.iter (fun a_file ->
           add_command_arg cmd (BF a_file)
         ) lib2.lib_clink_deps;
@@ -881,9 +853,9 @@ let add_cmxs2asm_rule lib ptmp linkflags cclib cmx_files cmxo_files o_files opt_
       | RulesPackage -> ()
     ) tolink;
 
-    let cmd = add_files_to_link_to_command "asm prog" cmd options cmx_files in
-    let r = new_rule lib opt_file [cmd] in
-    add_more_rule_sources lib r [ ocamlopt_deps; asmlink_deps; link_deps ] options;
+    let cmd = add_files_to_link_to_command "asm prog" cmd envs cmx_files in
+    let r = new_rule lib envs opt_file [cmd] in
+    add_more_rule_sources lib envs r [ ocamlopt_deps; asmlink_deps; link_deps ];
 
     add_rule_sources r cmx_files;
     add_rule_sources r cmxo_files;
@@ -899,12 +871,7 @@ let add_cmxs2asm_rule lib ptmp linkflags cclib cmx_files cmxo_files o_files opt_
     ) lib.lib.lib_requires
 
 
-let add_os2a_rule lib o_files a_file =
-    let envs = [lib.lib.lib_options] in
-  (*
-    let src_dir = lib.lib.lib_src_dir in
-    let dst_dir = lib.lib.lib_dst_dir in
-  *)
+let add_os2a_rule lib envs ptmp o_files a_file =
   if not lib.lib.lib_installed then
     let target = a_file.file_basename in
     let ext_lib = BuildOCamlConfig.ocaml_config_ext_lib.get envs  in
@@ -915,20 +882,15 @@ let add_os2a_rule lib o_files a_file =
       [S "-custom"; S "-o"; F target] in
     List.iter (fun s ->
       add_command_arg cmd (argument_of_string s))
-      (mklib_option.get [lib.lib.lib_options] );
+      (mklib_option.get envs);
     List.iter (fun o_file ->
       add_command_arg cmd (BF o_file)) o_files;
-    let r = new_rule lib a_file
-      [Execute cmd] in
-    add_more_rule_sources lib r [ ocamlmklib_deps ] envs;
+    let r = new_rule lib envs a_file [Execute cmd] in
+    add_more_rule_sources lib envs r [ ocamlmklib_deps ];
     add_rule_sources r o_files;
     ()
 
-let add_c_source b lib ptmp c_file options =
-(*
-  let src_dir = lib.lib.lib_src_dir in
-*)
-  let envs = [ options; lib.lib.lib_options ] in
+let add_c_source b lib envs ptmp c_file =
   let dst_dir = lib.lib.lib_dst_dir in
 
   let basename = c_file.file_basename in
@@ -936,7 +898,7 @@ let add_c_source b lib ptmp c_file options =
   let ext_obj  = BuildOCamlConfig.ocaml_config_ext_obj.get envs  in
   let o_file = add_dst_file b dst_dir (kernel_name ^ ext_obj) in
   if not lib.lib.lib_installed then
-    add_c2o_rule b lib [] c_file o_file envs;
+    add_c2o_rule b lib envs ptmp [] c_file o_file;
   ptmp.o_files := o_file :: !(ptmp.o_files)
 
 let add_command_pack_args cmd modnames =
@@ -974,7 +936,7 @@ let move_compilation_garbage r copy_dir temp_dir kernel_name lib =
 
 
 
-let do_copy_objects_from b lib src_lib kernel_name extension obj_files =
+let do_copy_objects_from b lib envs src_lib kernel_name extension obj_files =
 (*
   Printf.eprintf "do_copy_objects_from %s:%s.%s -> %s:%s.%s\n%!"
     src_lib.lib_name kernel_name extension lib.lib_name kernel_name extension;
@@ -993,7 +955,7 @@ let do_copy_objects_from b lib src_lib kernel_name extension obj_files =
       try
         let src_obj_file = find_dst_file src_lib.lib.lib_dst_dir obj_basename in
 
-        let r = new_rule lib dst_obj_file [] in
+        let r = new_rule lib envs dst_obj_file [] in
         add_rule_command r (Copy (BF src_obj_file, BF dst_obj_file));
         add_rule_source r src_obj_file;
 
@@ -1015,15 +977,15 @@ let get_copy_objects_from lib envs =
       Printf.eprintf "Error: in package %S, copy_objects_from %S, no such package\n%!" lib.lib.lib_name name;
       clean_exit 2
 
-let copy_ml_objects_from b lib ptmp envs src_lib kernel_name =
+let copy_ml_objects_from b lib envs ptmp src_lib kernel_name =
   (* TODO: check that pack_for = [] *)
   (* TODO: check that src_lib is in requires *)
-  do_copy_objects_from b lib src_lib kernel_name ".cmi" ptmp.cmi_files;
+  do_copy_objects_from b lib envs src_lib kernel_name ".cmi" ptmp.cmi_files;
   if byte_option.get envs  then
-    do_copy_objects_from b lib src_lib kernel_name ".cmo" ptmp.cmo_files;
+    do_copy_objects_from b lib envs src_lib kernel_name ".cmo" ptmp.cmo_files;
   if asm_option.get envs then begin
-    do_copy_objects_from b lib src_lib kernel_name ".cmx" ptmp.cmx_files;
-    do_copy_objects_from b lib src_lib kernel_name ".o" ptmp.cmxo_files;
+    do_copy_objects_from b lib envs src_lib kernel_name ".cmx" ptmp.cmx_files;
+    do_copy_objects_from b lib envs src_lib kernel_name ".o" ptmp.cmxo_files;
   end
 
 
@@ -1036,8 +998,8 @@ let ml2odoc lib ptmp kernel_name envs before_cmd pack_for force temp_ml_file ml_
     let odoc_file = add_dst_file b dst_dir odoc_basename in
 
     let cmd = new_command (ocamldoc_cmd.get envs ) (docflags envs) in
-    let r = new_rule lib odoc_file before_cmd in
-    add_more_rule_sources lib r [ ocamldoc_deps ] envs;
+    let r = new_rule lib envs odoc_file before_cmd in
+    add_more_rule_sources lib envs r [ ocamldoc_deps ];
     add_command_args cmd [S "-dump"; T odoc_basename];
     add_command_strings cmd (command_includes lib pack_for);
     if force = Force_IMPL || ml_file_option.get envs  then
@@ -1056,7 +1018,7 @@ let ml2odoc lib ptmp kernel_name envs before_cmd pack_for force temp_ml_file ml_
           add_rule_sources r lib.lib_bytecomp_deps
     ) lib.lib.lib_requires
 
-let mli2odoc lib ptmp kernel_name envs pack_for force mli_file seq_order =
+let mli2odoc lib envs ptmp kernel_name envs pack_for force mli_file seq_order =
   if needs_odoc lib then
     let b = lib.lib.lib_context in
     let dst_dir = lib.lib.lib_dst_dir in
@@ -1065,8 +1027,8 @@ let mli2odoc lib ptmp kernel_name envs pack_for force mli_file seq_order =
     let odoc_file = add_dst_file b dst_dir odoc_basename in
 
     let cmd = new_command (ocamldoc_cmd.get envs ) (docflags envs) in
-    let r = new_rule lib odoc_file [] in
-    add_more_rule_sources lib r [ ocamldoc_deps ] envs;
+    let r = new_rule lib envs odoc_file [] in
+    add_more_rule_sources lib envs r [ ocamldoc_deps ];
     add_command_args cmd [S "-dump"; BF odoc_file];
     add_command_strings cmd (command_includes lib pack_for);
     if force = Force_INTF || mli_file_option.get envs  then
@@ -1085,9 +1047,7 @@ let mli2odoc lib ptmp kernel_name envs pack_for force mli_file seq_order =
     ) lib.lib.lib_requires
 
 
-let add_mli_source b lib ptmp mli_file options =
-  let envs = [ options; lib.lib.lib_options ] in
-
+let add_mli_source b lib envs ptmp mli_file =
 
   if lib.lib.lib_installed then () else
     let _ = () in
@@ -1100,7 +1060,7 @@ let add_mli_source b lib ptmp mli_file options =
     | Some src_lib ->
       (* TODO: check that pack_for = [] *)
       (* TODO: check that src_lib is in requires *)
-      do_copy_objects_from b lib src_lib kernel_name ".cmi" ptmp.cmi_files;
+      do_copy_objects_from b lib envs src_lib kernel_name ".cmi" ptmp.cmi_files;
 (* TODO: do the same for .odoc files ! *)
 
     | None ->
@@ -1124,8 +1084,8 @@ let add_mli_source b lib ptmp mli_file options =
       ptmp.src_files <- IntMap.add mli_file.file_id mli_file ptmp.src_files;
 
       let copy_dir = copy_dir lib mli_file in
-      let ppv = BuildOCamlSyntaxes.get_pp lib basename options in
-      let comp_deps = comp_deps lib options in
+      let ppv = BuildOCamlSyntaxes.get_pp lib basename envs in
+      let comp_deps = comp_deps lib envs in
       let mli_file, force =
         match ppv.pp_option with
           [] -> mli_file, Force_not
@@ -1140,11 +1100,11 @@ let add_mli_source b lib ptmp mli_file options =
           let cmd = new_command pp (ppv.pp_flags @ [ BF mli_file ])  in
           add_command_pipe cmd (File.to_string new_mli_file.file_file);
 
-          let r = new_rule lib new_mli_file [] in
-          add_more_rule_sources lib r [] envs;
+          let r = new_rule lib envs new_mli_file [] in
+          add_more_rule_sources lib envs r [];
           add_rule_command r (Execute cmd);
           BuildOCamlSyntaxes.add_pp_requires r ppv;
-          add_more_rule_sources lib r [ pp_deps ] envs;
+          add_more_rule_sources lib envs r [ pp_deps ];
           add_rule_source r mli_file;
           add_rule_sources r comp_deps;
           new_mli_file, Force_INTF
@@ -1155,7 +1115,7 @@ let add_mli_source b lib ptmp mli_file options =
       in
       let needs_odoc = needs_odoc lib in
       let mldep_file_ok =
-        add_ml2mldep_rule lib dst_dir pack_for force mli_file mldep_file needs_odoc options in
+        add_ml2mldep_rule lib envs dst_dir pack_for force mli_file mldep_file needs_odoc in
       let seq_order = [mldep_file_ok] in
 
       let cmi_basename = kernel_name ^ ".cmi" in
@@ -1163,7 +1123,7 @@ let add_mli_source b lib ptmp mli_file options =
       let cmi_file = add_dst_file b dst_dir cmi_basename in
 
       let cmd, cmd_deps =
-        if byte_option.get [lib.lib.lib_options]  then
+        if byte_option.get envs then
           let cmd = new_command (ocamlc_cmd.get envs ) (bytecompflags envs) in
           add_bin_annot_argument cmd envs;
           add_command_args cmd [S "-c"; S "-o"; BF cmi_temp];
@@ -1174,7 +1134,8 @@ let add_mli_source b lib ptmp mli_file options =
           add_command_args cmd [BF mli_file];
           cmd, ocamlc_deps
         else
-          let cmd = new_command (ocamlopt_cmd.get envs ) (asmcompflags envs) in
+          let cmd = new_command (ocamlopt_cmd.get envs )
+              (asmcompflags envs) in
           add_bin_annot_argument cmd envs;
           add_command_args cmd [S "-c"; S "-o"; BF cmi_temp];
           add_command_strings cmd (command_includes lib pack_for);
@@ -1185,8 +1146,8 @@ let add_mli_source b lib ptmp mli_file options =
           add_command_args cmd [BF mli_file];
           cmd, ocamlopt_deps
       in
-      let r = new_rule  lib cmi_file [Execute cmd] in
-      add_more_rule_sources lib r [cmd_deps] envs;
+      let r = new_rule  lib envs cmi_file [Execute cmd] in
+      add_more_rule_sources lib envs r [cmd_deps];
       add_rule_sources r comp_deps;
 
       if cmi_temp != cmi_file then begin
@@ -1236,7 +1197,7 @@ let add_mli_source b lib ptmp mli_file options =
           lib_modules := StringMap.add modname (MLI, basename) !lib_modules
       end;
 
-      mli2odoc lib ptmp kernel_name envs pack_for force mli_file seq_order;
+      mli2odoc lib envs ptmp kernel_name envs pack_for force mli_file seq_order;
 
       if pack_for = [] then
         ptmp.cmi_files := cmi_file :: !(ptmp.cmi_files)
@@ -1290,8 +1251,7 @@ let rec find_source_with_extension b lib src_dir kernel_name exts =
 
 let standard_source_exts =        [ "mly"; "mll"; "ml"; "mli"; "c" ]
 
-let get_packed_objects lib r src_dir pack_of obj_ext =
-  let options = [ lib.lib.lib_options ] in
+let get_packed_objects lib envs r src_dir pack_of obj_ext =
   let packed_cmx_files = ref [] in
   let b = r.rule_context in
   List.iter (fun basename ->
@@ -1305,11 +1265,11 @@ let get_packed_objects lib r src_dir pack_of obj_ext =
        "ml" | "mll" | "mly" -> obj_ext
           | "mli" -> "cmi"
           | ext ->
-            if List.mem ext (BuildValue.get_strings_with_default options
+            if List.mem ext (BuildValue.get_strings_with_default envs
                   "impl_exts" []) then
               obj_ext
             else
-            if List.mem ext (BuildValue.get_strings_with_default options
+            if List.mem ext (BuildValue.get_strings_with_default envs
                   "intf_exts" []) then
               "cmi"
             else
@@ -1406,8 +1366,8 @@ let add_info b lib options name =
       (BuildValue.get_string_with_default options name "")
 
 
-let create_ml_file_if_needed b lib mut_dir options ml_file =
-  if BuildValue.get_bool_with_default options "ocp2ml" false then begin
+let create_ml_file_if_needed b lib envs mut_dir ml_file =
+  if BuildValue.get_bool_with_default envs "ocp2ml" false then begin
 
     let tmp_ml = add_file b mut_dir ml_file.file_basename in
     let tmp_ml_file = tmp_ml.file_file in
@@ -1420,27 +1380,27 @@ let create_ml_file_if_needed b lib mut_dir options ml_file =
 
     bprintf_list b "authors"
       (
-        (BuildValue.get_strings_with_default options "author" [])
+        (BuildValue.get_strings_with_default envs "author" [])
           @
-        (BuildValue.get_strings_with_default options "authors" [])
+        (BuildValue.get_strings_with_default envs "authors" [])
       );
-    List.iter (add_info b lib options) [
+    List.iter (add_info b lib envs) [
       "copyright";
       "license";
       "description";
     ];
 
     List.iter (fun variable ->
-      bprintf_list b variable ( BuildValue.get_strings_with_default options variable [] )
-    ) (BuildValue.get_strings_with_default options "env_lists" []);
+      bprintf_list b variable ( BuildValue.get_strings_with_default envs variable [] )
+    ) (BuildValue.get_strings_with_default envs "env_lists" []);
 
-    List.iter (add_info b lib options)
-      (BuildValue.get_strings_with_default options "env_strings" []);
+    List.iter (add_info b lib envs)
+      (BuildValue.get_strings_with_default envs "env_strings" []);
 
     List.iter (fun variable ->
       Printf.bprintf b "let %s = %b\n" variable
-        (BuildValue.get_bool_with_default options variable false)
-    ) (BuildValue.get_strings_with_default options "env_bools" []);
+        (BuildValue.get_bool_with_default envs variable false)
+    ) (BuildValue.get_strings_with_default envs "env_bools" []);
 
     Printf.bprintf b "let requires = [\n";
     List.iter (fun dep ->
@@ -1509,10 +1469,9 @@ let copy_mli_if_needed b mut_dir mll_file kernel_name =
    to tell the build system that the mli does not exist. *)
 
 
-let add_ml_source b lib ptmp ml_file options =
+let add_ml_source b lib envs ptmp ml_file =
   let needs_odoc = needs_odoc lib in
 
-  let envs = [ options; lib.lib.lib_options ] in
   let basename = ml_file.file_basename in
   (*  Printf.eprintf "basename = [%s]\n" basename; *)
   let kernel_name =
@@ -1558,18 +1517,18 @@ let add_ml_source b lib ptmp ml_file options =
 
   end else
 
-    let comp_deps = comp_deps lib options in
+    let comp_deps = comp_deps lib envs in
     let copy_objects_from = get_copy_objects_from lib envs  in
     match copy_objects_from with
     | Some src_lib ->
-      copy_ml_objects_from b lib ptmp envs src_lib kernel_name
+      copy_ml_objects_from b lib envs ptmp src_lib kernel_name
 
     | None ->
 
       let copy_dir = copy_dir lib ml_file in
       let old_ml_file = ml_file in
-      let ml_file = create_ml_file_if_needed b lib lib.lib.lib_mut_dir envs ml_file in
-      let ppv = BuildOCamlSyntaxes.get_pp lib basename options in
+      let ml_file = create_ml_file_if_needed b lib envs lib.lib.lib_mut_dir ml_file in
+      let ppv = BuildOCamlSyntaxes.get_pp lib basename envs in
 
       (* [has_mli] = None | Some (build_file, in_source_directory_predicate) *)
       let _has_mli =
@@ -1599,7 +1558,7 @@ let add_ml_source b lib ptmp ml_file options =
         if file2string = [] then ml_file else
           let new_ml_file = add_file b lib.lib.lib_mut_dir ml_file.file_basename
           in
-          let r = new_rule lib new_ml_file [] in
+          let r = new_rule lib envs new_ml_file [] in
           (* TODO: for bytecode, we should generate the .mli too *)
           let sources = List.map (fun file ->
             file, add_file b orig_ml_file.file_dir file
@@ -1640,12 +1599,12 @@ let add_ml_source b lib ptmp ml_file options =
           let cmd = new_command pp (ppv.pp_flags @ [ BF ml_file ])  in
           add_command_pipe cmd (File.to_string new_ml_file.file_file);
 
-          let r = new_rule lib new_ml_file [] in
-          add_more_rule_sources lib r [] envs;
+          let r = new_rule lib envs new_ml_file [] in
+          add_more_rule_sources lib envs r [];
 
           add_rule_command r (Execute cmd);
           BuildOCamlSyntaxes.add_pp_requires r ppv;
-          add_more_rule_sources lib r [ pp_deps ] envs;
+          add_more_rule_sources lib envs r [ pp_deps ];
           add_rule_source r ml_file;
           add_rule_sources r comp_deps;
           new_ml_file, Force_IMPL
@@ -1711,7 +1670,9 @@ let add_ml_source b lib ptmp ml_file options =
          (* MLI file does exist !!! We should probably put a warning, as we
             have no information on how to compile this file !!*)
 
-              ignore (add_mli_source b lib ptmp mli_file (BuildValue.set_bool options "ml" false) : unit);
+              let envs =
+                (BuildValue.set_bool BuildValue.empty_env "ml" false) :: envs in
+              ignore (add_mli_source b lib envs ptmp mli_file : unit);
               let cmi_file = find_dst_file dst_dir cmi_name in
               Some cmi_file
             | None -> None
@@ -1727,8 +1688,8 @@ let add_ml_source b lib ptmp ml_file options =
             add_dst_file b dst_dir (kernel_name ^ ".mlmods")
           in
           ptmp.src_files <- IntMap.add ml_file.file_id ml_file ptmp.src_files;
-          let mldep_file_ok = add_ml2mldep_rule lib dst_dir pack_for force ml_file mldep_file
-            (needs_odoc && needs_cmi = None) options in
+          let mldep_file_ok = add_ml2mldep_rule lib envs dst_dir pack_for force ml_file mldep_file
+            (needs_odoc && needs_cmi = None) in
           ptmp.dep_files <- IntMap.add mldep_file.file_id mldep_file ptmp.dep_files;
           [mldep_file_ok]
       in
@@ -1792,8 +1753,8 @@ let add_ml_source b lib ptmp ml_file options =
           let cmo_file = add_dst_file b dst_dir cmo_basename in
 
           let cmd = new_command (ocamlc_cmd.get envs ) (bytecompflags envs) in
-          let r = new_rule lib cmo_file before_cmd in
-          add_more_rule_sources lib r [ ocamlc_deps ] envs;
+          let r = new_rule lib envs cmo_file before_cmd in
+          add_more_rule_sources lib envs r [ ocamlc_deps ];
           add_rule_sources r comp_deps;
 
           (*    let temp_dir = BuildEngineRules.rule_temp_dir r in
@@ -1821,7 +1782,7 @@ let add_ml_source b lib ptmp ml_file options =
             let src_dir = Filename.concat dst_dir.dir_fullname modname in
             (*      Printf.eprintf "Pack in %s [%s]\n" src_dir modname; *)
             let src_dir = add_directory b src_dir in
-            let cmo_files = get_packed_objects lib r src_dir pack_of "cmo" in
+            let cmo_files = get_packed_objects lib envs r src_dir pack_of "cmo" in
             let cmd = add_files_to_link_to_command "byte pack" cmd envs cmo_files in
             add_rule_command r cmd
           end;
@@ -1866,8 +1827,9 @@ let add_ml_source b lib ptmp ml_file options =
           let o_file = add_dst_file b dst_dir o_basename in
 
           let cmd = new_command (ocamlopt_cmd.get envs ) (asmcompflags envs) in
-          let r = new_rule  lib cmx_file before_cmd in
-          add_more_rule_sources lib r [ ocamlopt_deps] envs;
+
+          let r = new_rule  lib envs cmx_file before_cmd in
+          add_more_rule_sources lib envs r [ ocamlopt_deps];
           add_rule_sources r comp_deps;
           add_bin_annot_argument cmd envs;
           (*
@@ -1893,7 +1855,7 @@ let add_ml_source b lib ptmp ml_file options =
             add_command_pack_args cmd pack_for;
 
             let src_dir = add_directory b (Filename.concat dst_dir.dir_fullname modname) in
-            let cmx_files = get_packed_objects lib r src_dir pack_of "cmx" in
+            let cmx_files = get_packed_objects lib envs r src_dir pack_of "cmx" in
             let cmd = add_files_to_link_to_command "asm pack" cmd envs cmx_files in
             add_rule_command r cmd
           end;
@@ -1952,26 +1914,21 @@ let add_ml_source b lib ptmp ml_file options =
 
       end
 
-let add_mll_source b lib ptmp mll_file options =
-  (*  let src_dir = lib.lib.lib_src_dir in *)
-  (*
-    let dst_dir = lib.lib.lib_dst_dir in
-  *)
-  let envs = [ options; lib.lib.lib_options ] in
+let add_mll_source b lib envs ptmp mll_file =
   let basename = mll_file.file_basename in
   let kernel_name = Filename.chop_suffix basename ".mll" in
 
   if lib.lib.lib_installed then
 
     let ml_file = add_file b lib.lib.lib_src_dir (kernel_name ^ ".ml") in
-    add_ml_source b lib ptmp ml_file options
+    add_ml_source b lib envs ptmp ml_file
 
   else
 
     let copy_objects_from = get_copy_objects_from lib envs  in
     match copy_objects_from with
     | Some src_lib ->
-      copy_ml_objects_from b lib ptmp envs src_lib kernel_name
+      copy_ml_objects_from b lib envs ptmp src_lib kernel_name
     | None ->
 
 (*    let tmp_dirname =
@@ -1986,28 +1943,28 @@ let add_mll_source b lib ptmp mll_file options =
 
 
     let ml_file = add_file b lib.lib.lib_mut_dir (kernel_name ^ ".ml") in
-    add_mll2ml_rule lib mll_file ml_file options;
-    add_ml_source b lib ptmp ml_file options
 
-let add_mly_source b lib ptmp mly_file options =
+    add_mll2ml_rule lib envs ptmp mll_file ml_file;
+    add_ml_source b lib envs ptmp ml_file
+
+let add_mly_source b lib envs ptmp mly_file =
   (*  let src_dir = lib.lib.lib_src_dir in *)
   (*
     let dst_dir = lib.lib.lib_dst_dir in
   *)
   let _bc = lib.lib.lib_builder_context in
-  let envs = [ options; lib.lib.lib_options ] in
   let basename = mly_file.file_basename in
   let kernel_name = Filename.chop_suffix basename ".mly" in
 
   if lib.lib.lib_installed then
     let ml_file = add_file b mly_file.file_dir (kernel_name ^ ".ml") in
-    add_ml_source b lib ptmp ml_file options
+    add_ml_source b lib envs ptmp ml_file
   else
 
     let copy_objects_from = get_copy_objects_from lib envs  in
     match copy_objects_from with
     | Some src_lib ->
-      copy_ml_objects_from b lib ptmp envs src_lib kernel_name
+      copy_ml_objects_from b lib envs ptmp src_lib kernel_name
     | None ->
 
       let _ = () in
@@ -2016,13 +1973,14 @@ let add_mly_source b lib ptmp mly_file options =
       let ml_file = add_file b lib.lib.lib_mut_dir (kernel_name ^ ".ml") in
       let mli_filename = kernel_name ^ ".mli" in
       let mli_file = add_file b lib.lib.lib_mut_dir mli_filename in
-      add_mli_source b lib ptmp mli_file options;
-      add_mly2ml_rule b lib mly_file ml_file mli_file options;
-      add_ml_source b lib ptmp ml_file options
 
-let rec process_source b lib ptmp src_dir (basename, options) =
+      add_mli_source b lib envs ptmp mli_file;
+      add_mly2ml_rule b lib envs ptmp mly_file ml_file mli_file;
+      add_ml_source b lib envs ptmp ml_file
+
+
+let rec process_source b lib envs ptmp src_dir basename =
   let bc = lib.lib.lib_builder_context in
-  let envs = [ options; lib.lib.lib_options ] in
 
   let (kernel_name, last_extension) = OcpString.rcut_at basename '.' in
   let (basename, last_extension) =
@@ -2045,7 +2003,7 @@ let rec process_source b lib ptmp src_dir (basename, options) =
   in
   match last_extension with
     "c" ->
-      add_c_source b lib ptmp src_file options
+      add_c_source b lib envs ptmp src_file
   | "objects" ->
     let obj_lib =
       try
@@ -2079,40 +2037,41 @@ let rec process_source b lib ptmp src_dir (basename, options) =
     | None -> ()
     | Some obj_lib ->
       let src_dir = obj_lib.lib.lib_src_dir in
-      List.iter (process_source b lib ptmp src_dir) obj_lib.lib_sources
+      List.iter (fun (file, options) ->
+        process_source b lib envs ptmp src_dir file) obj_lib.lib_sources
     end
 
   | "ml" ->
-    add_ml_source b lib ptmp src_file options
+    add_ml_source b lib envs ptmp src_file
   | "mll" ->
-    add_mll_source b lib ptmp src_file options
+    add_mll_source b lib envs ptmp src_file
   | "mly" ->
-    add_mly_source b lib ptmp src_file options
+    add_mly_source b lib envs ptmp src_file
   | "mli" ->
-    add_mli_source b lib ptmp src_file options
+    add_mli_source b lib envs ptmp src_file
     (* other ones: .ml4, mli4, .ml5, .mli5, .mly4, .mly5, .mll4, .mll5 *)
   | ext ->
     if ml_file_option.get envs
       || List.mem ext (BuildValue.get_strings_with_default envs "ml_exts" [])
       || List.mem ext (BuildValue.get_strings_with_default envs "impl_exts" [])
     then
-      add_ml_source b lib ptmp src_file options
+      add_ml_source b lib envs ptmp src_file
     else
       if mli_file_option.get envs
         || List.mem ext (BuildValue.get_strings_with_default envs "mli_exts" [])
         || List.mem ext (BuildValue.get_strings_with_default envs "intf_exts" [])
       then
-        add_mli_source b lib ptmp src_file options
+        add_mli_source b lib envs ptmp src_file
       else
         if
           List.mem ext (BuildValue.get_strings_with_default envs "mll_exts" [])
         then
-          add_mll_source b lib ptmp src_file options
+          add_mll_source b lib envs ptmp src_file
         else
           if
             List.mem ext (BuildValue.get_strings_with_default envs "mly_exts" [])
           then
-            add_mly_source b lib ptmp src_file options
+            add_mly_source b lib envs ptmp src_file
           else
             begin
 
@@ -2123,9 +2082,9 @@ let rec process_source b lib ptmp src_dir (basename, options) =
               clean_exit 2;
             end
 
-let process_source b lib ptmp src_dir (basename, options) =
+let process_source b lib envs ptmp src_dir (basename, options) =
   let bc = lib.lib.lib_builder_context in
-  let envs = [ options; lib.lib.lib_options ] in
+  let envs = options :: envs in
   let src_dir =
     let package = package_option.get  envs  in
     if package = "" then src_dir else
@@ -2151,9 +2110,9 @@ let process_source b lib ptmp src_dir (basename, options) =
         let subdir = File.add_basenames (File.of_string "") subdir in
         Filename.concat (File.to_string subdir) basename
   in
-  process_source b lib ptmp src_dir (basename, options)
+  process_source b lib envs ptmp src_dir basename
 
-let process_sources b lib =
+let process_sources b lib envs =
   let ptmp = new_package_temp_variables () in
   begin
     match lib.lib.lib_type with
@@ -2172,7 +2131,7 @@ let process_sources b lib =
     | ObjectsPackage ->
       let src_dir = lib.lib.lib_src_dir in
       let _dst_dir = lib.lib.lib_dst_dir in
-      List.iter (process_source b lib ptmp src_dir) lib.lib_sources;
+      List.iter (process_source b lib envs ptmp src_dir) lib.lib_sources;
   end;
 
   ptmp.cmo_files := List.rev !(ptmp.cmo_files);
@@ -2184,12 +2143,12 @@ let process_sources b lib =
   ptmp.o_files := List.rev !(ptmp.o_files);
   ptmp
 
-let add_library b lib =
+let add_library b lib envs =
 (*  let src_dir = lib.lib.lib_src_dir in *)
   let dst_dir = lib.lib.lib_dst_dir in
-  let envs = [lib.lib.lib_options] in
-  let ptmp = process_sources b lib in
+  let envs = lib.lib.lib_options :: envs in
 
+  let ptmp = process_sources b lib envs in
 
   let cclib =  cclib_option.get envs in
   let cclib = String.concat " " cclib in
@@ -2200,12 +2159,13 @@ let add_library b lib =
         Printf.sprintf "lib%s%s" lib.lib_stubarchive ext_lib in
       if !(ptmp.o_files) <> [] then
         let a_file = add_dst_file b dst_dir libbasename in
-        add_os2a_rule lib !(ptmp.o_files) a_file;
+
+        add_os2a_rule lib envs ptmp !(ptmp.o_files) a_file;
         Some a_file
       else
         try
           let a_file = BuildValue.get_string envs "libstubs" in
-          let a_file = subst global_subst a_file in
+          let a_file = subst_envs envs a_file in
           if Filename.basename a_file <> libbasename then begin
             Printf.eprintf "%s\nError: %s=%S basename differs from %S^%s^%S=\"%s\"\n%!"
               (string_of_libloc lib)
@@ -2237,7 +2197,7 @@ let add_library b lib =
   !(ptmp.cmo_files) <> [] then begin
     let cma_file = add_dst_file b dst_dir (lib.lib_archive ^ ".cma") in
     lib.lib_bytelink_deps <- cma_file :: lib.lib_bytelink_deps;
-    add_cmos2cma_rule lib ptmp cclib !(ptmp.cmo_files) cma_file;
+    add_cmos2cma_rule lib envs ptmp cclib !(ptmp.cmo_files) cma_file;
     lib.lib_byte_targets <- (cma_file, CMA) ::
       (List.map (fun s -> (s, CMI)) !(ptmp.cmi_files)) @ lib.lib_byte_targets;
     lib.lib_cmo_objects <- !(ptmp.cmo_files) @ lib.lib_cmo_objects;
@@ -2246,7 +2206,7 @@ let add_library b lib =
   if  asm_option.get envs &&
     !(ptmp.cmx_files) <> [] then begin
     let (cmxa_file, a_file) =
-      add_cmxs2cmxa_rule b lib cclib !(ptmp.cmi_files) !(ptmp.cmx_files) !(ptmp.cmxo_files) stubs_files in
+      add_cmxs2cmxa_rule b lib envs ptmp cclib !(ptmp.cmi_files) !(ptmp.cmx_files) !(ptmp.cmxo_files) stubs_files in
     lib.lib_asm_targets <-
       (cmxa_file, CMXA) :: (a_file, CMXA_A) ::
       (List.map (fun s -> (s, CMI)) !(ptmp.cmi_files) ) @
@@ -2269,17 +2229,14 @@ let add_library b lib =
     if not (Sys.file_exists doc_dirname) then safe_mkdir doc_dirname;
     let docdir = add_directory b doc_dirname in
     let html_file = add_file b dst_dir "_doc/index.html" in
-    add_odocs2html_rule lib !(ptmp.odoc_files) docdir html_file;
+    add_odocs2html_rule lib envs !(ptmp.odoc_files) docdir html_file;
     lib.lib_doc_targets := html_file :: !(lib.lib_doc_targets)
   end;
   ()
 
 
-let add_objects b lib =
-(*  let src_dir = lib.lib.lib_src_dir in *)
-(*  let dst_dir = lib.lib.lib_dst_dir in *)
-  let ptmp = process_sources b lib in
-  let envs = [lib.lib.lib_options] in
+let add_objects b lib envs =
+  let ptmp = process_sources b lib envs in
 
   if byte_option.get  envs  then begin
     lib.lib_byte_targets <-
@@ -2316,43 +2273,43 @@ let add_objects b lib =
 
 let string_of_loc (x,y,z) = Printf.sprintf "%s:%d:%s" x y z
 
-let local_subst (file, env) s =
-  let s = subst global_subst s in
+let local_subst lib (file, envs) s =
+  let s = subst_envs envs s in
   let s = BuildSubst.apply_substituter
-      BuildOCPInterp.filesubst s (file,env) in
+      BuildOCPInterp.filesubst s (file,envs) in
   s
 
-let add_rules bc lib target_name target_files =
+let add_rules bc lib envs target_name target_files =
   let _b = bc.build_context in
   let dirname = lib.lib.lib_dirname in
-  let files = BuildValue.get_strings_with_default [lib.lib.lib_options] "source_files" [] in
+  let files = BuildValue.get_strings_with_default envs "source_files" [] in
   List.iter (fun file ->
     ignore ( add_file lib.lib.lib_context lib.lib.lib_src_dir file : build_file );
   ) files;
   let build_rules =
-    BuildValue.get_local_prop_list_with_default [lib.lib.lib_options]
+    BuildValue.get_local_prop_list_with_default envs
       (target_name ^ "_rules") [] in
   let build_targets =
-    BuildValue.get_local_prop_list_with_default [lib.lib.lib_options]
+    BuildValue.get_local_prop_list_with_default envs
       (target_name ^ "_targets") [] in
 
-  List.iter (fun (file, _env) ->
-      let file = subst global_subst file in
+  List.iter (fun (file, options) ->
+    let envs = options :: envs in
+      let file = subst_envs envs file in
       let target_file = add_package_file lib file in
       target_files := target_file :: !target_files
   ) build_targets;
 
   if build_rules <> [] then
-    List.iter (fun (file, env) ->
+    List.iter (fun (file, options) ->
+      let envs = options :: envs in
 (*
       Printf.eprintf "Adding rule to build %s/%s\n%!" (File.to_string dirname) file;
 *)
 
-      let envs = [ env; lib.lib.lib_options ] in
-
       let uniq_rule = BuildValue.get_string_option_with_default envs "uniq_rule" None in
 
-      let file = subst global_subst file in
+      let file = subst_envs envs file in
       let target_file = add_package_file lib file in
 
       let to_build = BuildValue.get_bool_with_default envs "build_target" false in
@@ -2368,7 +2325,7 @@ let add_rules bc lib target_name target_files =
       with Not_found ->
 
 (*      let substituted_words = BuildValue.get_strings_with_default envs "subst" [] in *)
-      let local_subst = local_subst (file, envs) in
+      let local_subst = local_subst lib (file, envs) in
       let targets = BuildValue.get_strings_with_default envs "more_targets" [] in
       let targets = List.map local_subst targets in
 
@@ -2384,7 +2341,7 @@ let add_rules bc lib target_name target_files =
       let sources = List.map local_subst sources in
 
 
-      let r = new_rule lib target_file [] in
+      let r = new_rule lib envs target_file [] in
       begin match uniq_rule with
         None -> () | Some uniq_rule ->
           Hashtbl.add bc.uniq_rules uniq_rule r
@@ -2479,8 +2436,8 @@ let add_rules bc lib target_name target_files =
               (string, with_string)
             ) substitutions in
           let subst = List.fold_left (fun subst (string, with_string) ->
-              StringSubst.add_to_subst subst string with_string; subst
-            ) (StringSubst.empty_subst()) substitutions
+              StringSubst.Gen.add_to_subst subst string with_string; subst
+            ) (StringSubst.Gen.empty_subst()) substitutions
           in
 
           let printer b =
@@ -2492,8 +2449,8 @@ let add_rules bc lib target_name target_files =
           in
           let actor () =
             let s = FileString.string_of_file (file_filename from_file) in
-            let s = BuildSubst.subst subst s in
-            FileString.file_of_string (file_filename to_file) s
+            let _, s = StringSubst.Gen.subst subst s in
+            FileString.write_file (file_filename to_file) s
           in
           add_rule_source r from_file;
           add_rule_target r to_file;
@@ -2515,14 +2472,14 @@ let add_rules bc lib target_name target_files =
           in
           let actor () =
             Printf.eprintf "Loading %S\n" (file_filename from_file);
-            let make_subst = StringSubst.empty_subst () in
-            StringSubst.add_to_subst make_subst "\\ " " ";
+            let make_subst = StringSubst.Gen.empty_subst () in
+            StringSubst.Gen.add_to_subst make_subst "\\ " " ";
             let vars = ref [] in
             File.iter_lines (fun line ->
-              let _, line = StringSubst.iter_subst make_subst line in
+              let _, line = StringSubst.Gen.iter_subst make_subst line in
               if String.length line > 0 && line.[0] <> '#' then
                 let var, value = OcpString.cut_at line '=' in
-                StringSubst.add_to_subst make_subst
+                StringSubst.Gen.add_to_subst make_subst
                   (Printf.sprintf "$(%s)" var) value;
                 vars := (var, value) :: !vars
             ) from_file.file_file;
@@ -2546,7 +2503,7 @@ let add_rules bc lib target_name target_files =
           clean_exit 2
       ) commands;
 
-      add_more_rule_sources lib r [] envs;
+      add_more_rule_sources lib envs r [];
 
       add_rule_sources r sources;
 
@@ -2557,10 +2514,10 @@ let add_rules bc lib target_name target_files =
   ()
 
 
-let add_program b lib =
+let add_program b lib envs =
 (*  let src_dir = lib.lib.lib_src_dir in *)
   let dst_dir = lib.lib.lib_dst_dir in
-  let ptmp = process_sources b lib in
+  let ptmp = process_sources b lib envs in
 
   begin (* Fast check of libraries modules *)
     let map = ref StringMap.empty in
@@ -2598,16 +2555,16 @@ let add_program b lib =
     ) lib.lib.lib_requires
   end;
 
-  let cclib =  cclib_option.get [lib.lib.lib_options] in
+  let cclib =  cclib_option.get envs in
   let cclib = String.concat " "  cclib in
   begin
-    let linkflags = bytelinkflags lib in
+    let linkflags = lib.lib_bytelink_flags in
     let linkflags =
       if !(ptmp.cmo_files) <> [] then linkflags else S "-linkall" :: linkflags in
     let byte_file = add_dst_file b dst_dir (lib.lib_archive ^ byte_exe) in
-    add_cmos2byte_rule lib ptmp linkflags cclib !(ptmp.cmo_files)
+    add_cmos2byte_rule lib envs ptmp linkflags cclib !(ptmp.cmo_files)
       !(ptmp.o_files) byte_file;
-    if byte_option.get  [lib.lib.lib_options]  then begin
+    if byte_option.get  envs then begin
       lib.lib_byte_targets <- (byte_file, RUN_BYTE) :: lib.lib_byte_targets;
       lib.lib_bytelink_deps <- byte_file :: lib.lib_bytelink_deps;
 (*      lib.lib_bytecomp_deps <- byte_file :: lib.lib_bytecomp_deps; *)
@@ -2616,13 +2573,13 @@ let add_program b lib =
   end;
 
   if !(ptmp.cmx_files) <> [] then begin
-    let linkflags = asmlinkflags lib in
+    let linkflags = lib.lib_asmlink_flags in
     let linkflags =
       if !(ptmp.cmx_files) <> [] then linkflags else S "-linkall" :: linkflags in
     let asm_file = add_dst_file b dst_dir (lib.lib_archive ^ asm_exe) in
-    add_cmxs2asm_rule lib ptmp linkflags cclib
+    add_cmxs2asm_rule lib envs ptmp linkflags cclib
       !(ptmp.cmx_files) !(ptmp.cmxo_files) !(ptmp.o_files) asm_file;
-    if  asm_option.get [lib.lib.lib_options] then begin
+    if  asm_option.get envs then begin
       lib.lib_asm_targets <- (asm_file, RUN_ASM) :: lib.lib_asm_targets;
       lib.lib_asmlink_deps <- asm_file :: lib.lib_asmlink_deps;
 (*      lib.lib_asmcomp_deps <- asm_file :: lib.lib_asmcomp_deps; *)
@@ -2648,18 +2605,29 @@ let fix_windows_directory s =
   in
   iter len
 
-let add_package bc pk =
+let add_package global_env bc pk =
   let b = bc.build_context in
   let package_name = pk.BuildOCPTypes.package_name in
   let package_dirname = pk.BuildOCPTypes.package_dirname in
   let package_options = pk.BuildOCPTypes.package_options in
+  let package_options =
+    match pk.BuildOCPTypes.package_type with
+    | BuildOCPTypes.TestPackage ->
+      BuildValue.set_bool pk.BuildOCPTypes.package_options "install" false
+    | ObjectsPackage
+    | SyntaxPackage
+    | RulesPackage
+    | LibraryPackage
+    | ProgramPackage -> package_options
+  in
+  let envs = [ package_options ; !global_env ] in
   try
     if verbose 7 then Printf.eprintf "Adding %s\n" package_name;
 
     let package_dirname =
       try
-        let list = BuildValue.strings_of_plist ( BuildValue.get_local [package_options] "dirname" ) in
-        BuildSubst.subst_global (String.concat Filename.dir_sep list)
+        let list = BuildValue.strings_of_plist ( BuildValue.get_local envs "dirname" ) in
+        subst_envs envs (String.concat Filename.dir_sep list)
       with Var_not_found _ ->
         package_dirname
     in
@@ -2677,7 +2645,7 @@ let add_package bc pk =
       if already_installed then src_dir else
         let dirname =
           Filename.concat b.build_dir_filename package_name
-     (*     Filename.concat src_dir.dir_fullname build_dir_basename *)
+        (*     Filename.concat src_dir.dir_fullname build_dir_basename *)
         in
         if not (Sys.file_exists dirname) then
           safe_mkdir dirname;
@@ -2705,20 +2673,20 @@ let add_package bc pk =
 
     let lib = BuildGlobals.new_library bc pk
       package_dirname src_dir dst_dir mut_dir in
-    let lib = BuildOCamlGlobals.create_package lib in
+    let lib = BuildOCamlGlobals.create_package envs lib in
     (* TOOD: we should do that in one pass before *)
-    BuildSubst.add_to_global_subst
-      (Printf.sprintf "%s_SRC_DIR" package_name) src_dir.dir_fullname;
-    BuildSubst.add_to_global_subst
-      (Printf.sprintf "%s_DST_DIR" package_name) dst_dir.dir_fullname;
+    global_env := List.fold_left (fun env (v,vv) ->
+      (*      Printf.eprintf "Setting %S=%S\n%!" v vv; *)
+      BuildValue.set_string env v vv) !global_env
+      [
+        Printf.sprintf "%s_SRC_DIR" package_name, src_dir.dir_fullname;
+        Printf.sprintf "%s_DST_DIR" package_name, dst_dir.dir_fullname;
 
-    BuildSubst.add_to_global_subst
-      (Printf.sprintf "%s_FULL_SRC_DIR" package_name)
-      (absolute_filename src_dir.dir_fullname);
-    BuildSubst.add_to_global_subst
-      (Printf.sprintf "%s_FULL_DST_DIR" package_name)
-      (absolute_filename dst_dir.dir_fullname);
-
+        Printf.sprintf "%s_FULL_SRC_DIR" package_name,
+        absolute_filename src_dir.dir_fullname;
+        Printf.sprintf "%s_FULL_DST_DIR" package_name,
+        absolute_filename dst_dir.dir_fullname;
+      ];
     lib
   with Failure s ->
     Printf.eprintf "While preparing package %S:\n%!" package_name;
@@ -2736,20 +2704,23 @@ let create cin cout bc state =
   BuildOCamlGlobals.reset ();
 (*  BuildOCPPrinter.eprint_project "BuildOCamlRules.create" ptmp; *)
   let b = bc.build_context in
+  let global_env = ref BuildValue.empty_env in
   let libs =
-    Array.map (add_package bc) state.BuildOCPTypes.project_sorted
+    Array.map (add_package global_env bc) state.BuildOCPTypes.project_sorted
   in
+  let envs = [ !global_env ] in
   Array.iter (fun lib ->
+    let envs = lib.lib.lib_options :: envs in
     try
       safe_mkdir lib.lib.lib_dst_dir.dir_fullname;
-      add_rules bc lib "build" lib.lib_build_targets;
-      add_rules bc lib "doc" lib.lib_doc_targets;
-      add_rules bc lib "test" lib.lib_test_targets;
+      add_rules bc lib envs "build" lib.lib_build_targets;
+      add_rules bc lib envs "doc" lib.lib_doc_targets;
+      add_rules bc lib envs "test" lib.lib_test_targets;
 
       let linkdeps = ref [] in
       begin
         try
-          let deps = linkdeps_option.get [lib.lib.lib_options] in
+          let deps = linkdeps_option.get envs in
           List.iter (fun name ->
             try
               linkdeps := (StringMap.find name bc.packages_by_name) :: !linkdeps
@@ -2767,15 +2738,14 @@ let create cin cout bc state =
       end;
       lib.lib_linkdeps <- List.rev !linkdeps;
 
-
       begin
       match lib.lib.lib_type with
-        LibraryPackage -> add_library b  lib
-      | ProgramPackage -> add_program b  lib
+      | LibraryPackage -> add_library b lib envs
+      | ProgramPackage -> add_program b lib envs
       | TestPackage ->
-        if lib.lib_sources <> [] then add_program b  lib;
+        if lib.lib_sources <> [] then add_program b lib envs;
         lib.lib.lib_options <- BuildValue.set_bool lib.lib.lib_options "install" false
-      | ObjectsPackage -> add_objects b  lib
+      | ObjectsPackage -> add_objects b lib envs
       | SyntaxPackage -> ()
       | RulesPackage -> ()
       end;
@@ -2883,12 +2853,12 @@ let create cin cout bc state =
         | None -> assert false
         | Some install_dir -> install_dir
 
-
       let install () =
-        let installdir = install_dir () in
-        BuildOCamlInstall.install
-          install_where install_what
-          lib.lib installdir
+        if BuildValue.get_bool [lib.lib.lib_options; !global_env] "install" then
+          let installdir = install_dir () in
+          BuildOCamlInstall.install
+            install_where install_what
+            lib.lib installdir
 
 
     end in

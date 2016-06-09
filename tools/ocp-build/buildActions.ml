@@ -25,6 +25,7 @@ open BuildGlobals
 
 let time_steps = ref []
 let time_step (msg : string) =
+  if verbose 2 then Printf.eprintf "time_step: %s\n%!" msg;
   time_steps := (msg , MinUnix.gettimeofday()) :: !time_steps
 
 (* let verbose = DebugVerbosity.verbose [ "B" ] "BuildActions" *)

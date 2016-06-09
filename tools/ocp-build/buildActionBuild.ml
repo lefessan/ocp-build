@@ -78,7 +78,7 @@ let finally_do = ref []
 let add_finally action =
   finally_do := action :: !finally_do
 
-let do_load_project_files cin project_dir state =
+let do_load_project_files cin project_dir initial_bindings state =
   let open ProjectOptions in
 
   let force_scan = ref cin.cin_autoscan in
@@ -127,7 +127,7 @@ let do_load_project_files cin project_dir state =
 
       time_step "Loading project .ocp files...";
       let nerrors =
-        let config = BuildOCP.empty_config () in
+        let config = BuildOCP.empty_config initial_bindings in
         BuildOCP.load_ocp_files config state !!root_files
       in
       time_step "   Done loading project .ocp files";
@@ -390,9 +390,9 @@ let chdir_to_project p =
   ()
 
 
-let load_initial_project p state targets =
+let load_initial_project p initial_bindings state targets =
 
-  do_load_project_files p.cin p.project_dir state;
+  do_load_project_files p.cin p.project_dir initial_bindings state;
 
   (*    end; *)
 
@@ -504,9 +504,9 @@ let load_initial_project p state targets =
   *)
   (bc, projects, package_map)
 
-let rec do_compile stage p ncores  env_state arg_targets =
-
+let rec do_compile stage p ncores env_state initial_bindings arg_targets =
   let (bc, projects, package_map) = load_initial_project p
+      initial_bindings
       (BuildOCPInterp.copy_state env_state) arg_targets in
   let b = bc.build_context in
 
@@ -640,7 +640,7 @@ let rec do_compile stage p ncores  env_state arg_targets =
       BuildMisc.clean_exit 2
     end else begin
       Printf.eprintf "Some configuration files were changed. Restarting build\n%!";
-      do_compile (stage+1) p ncores  env_state arg_targets
+      do_compile (stage+1) p ncores  env_state initial_bindings arg_targets
     end else
     (bc, projects, package_map)
 
@@ -649,7 +649,7 @@ let do_read_env p =
   let cin = p.cin in
   let cout = p.cout in
 
-  BuildOCamlConfig.set_global_config cout;
+  let initial_bindings = BuildOCamlConfig.set_global_config cout in
 
   (* Don't modify default values from now on, since they have been included
      in the default configuration ! *)
@@ -691,13 +691,12 @@ let do_read_env p =
   time_step "Loading .ocp files from env...";
 
   let _nerrors1 =
-    let config = BuildOCP.generated_config () in
+    let config = BuildOCP.generated_config initial_bindings in
     BuildOCP.load_ocp_files config state  !env_ocp_files
   in
-
   time_step "   Done Loading .ocp files from env";
 
-  state
+  state, initial_bindings
 
 let get_ncores cin =
   let ncores = cin.cin_njobs in
@@ -713,7 +712,7 @@ let do_build p =
   let targets = List.rev !targets_arg in
   time_step "Arguments parsed.";
 
-  let env_state = do_read_env p in
+  let env_state, initial_bindings = do_read_env p in
   let env_pj = BuildOCP.verify_packages env_state in
   if !print_env_arg then begin
     BuildOCPPrinter.eprint_project "Environment packages" env_pj;
@@ -724,13 +723,8 @@ let do_build p =
 
   BuildOCamlVariables.packages_option.set
     (VList (Array.to_list (Array.map (fun pk ->
-        let dirname = absolute_filename pk.package_dirname in
-        List.iter (fun suffix ->
-          BuildSubst.add_to_global_subst (pk.package_name ^ suffix) dirname)
-          [ "_SRC_DIR"; "_DST_DIR"; "_FULL_SRC_DIR"; "_FULL_DST_DIR" ];
-        VPair (VString pk.package_name, VObject pk.package_options)
-      ) env_pj.project_sorted)));
-
+         VPair (VString pk.package_name, VObject pk.package_options)
+       ) env_pj.project_sorted)));
 
   if !query_global then move_to_project := false;
 
@@ -778,7 +772,7 @@ let do_build p =
 
   chdir_to_project p;
 
-  do_compile 0 p (get_ncores p.cin) env_state targets
+  do_compile 0 p (get_ncores p.cin) env_state initial_bindings targets
 
 
 let action () =

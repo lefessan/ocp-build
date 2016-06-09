@@ -400,10 +400,10 @@ let set_global_config cout =
   (match cout.cout_byte_support with None -> () | Some bool ->
     byte_support.set bool);
 
-  begin
-    match cout.cout_ocaml with
+  match cout.cout_ocaml with
     | None ->
-      ocaml_config_found.set false
+      ocaml_config_found.set false;
+      []
     | Some cfg ->
       ocaml_config_found.set true;
       ocaml_config_ext_lib.set cfg.ocaml_ext_lib;
@@ -418,9 +418,7 @@ let set_global_config cout =
       ocaml_config_os_type.set [cfg.ocaml_os_type];
       ocaml_config_ext_dll.set cfg.ocaml_ext_dll;
 
-      BuildSubst.add_to_global_subst "OCAMLLIB" cfg.ocaml_ocamllib;
-      BuildSubst.add_to_global_subst "OCAMLBIN" cfg.ocaml_ocamlbin;
-  end;
-
-  (*  Printf.fprintf stderr "SYSTEM = %s\n%!" cfg.ocaml_system; *)
-  ()
+      [
+        "OCAMLLIB", cfg.ocaml_ocamllib;
+        "OCAMLBIN", cfg.ocaml_ocamlbin
+      ]

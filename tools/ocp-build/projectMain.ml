@@ -94,7 +94,7 @@ let _ =
       Printf.printf "%S\n%!" (File.to_string file)
     ) files;
   let state = BuildOCP.init_packages () in
-  let config = BuildOCP.empty_config () in
+  let config = BuildOCP.empty_config [] in
   let nerrors = BuildOCP.load_ocp_files config state files in
   let pj = BuildOCP.verify_packages state in
   if nerrors > 0 then exit 2;

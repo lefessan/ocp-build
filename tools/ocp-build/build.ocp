@@ -132,9 +132,9 @@ begin library "ocp-build-ocaml-plugin"
   files = [
     "buildOCamlConfig.ml";
     "buildOCamlTypes.ml";
+    "buildOCamlVariables.ml";
     "buildOCamlGlobals.ml";
     "buildOCamlMisc.ml";
-    "buildOCamlVariables.ml";
     "buildOCamldep.ml";         (* Load dependencies from a file generated
                                      by ocamldep *)
     "buildOCamlSyntaxes.ml";    (* For preprocessing of OCaml files *)

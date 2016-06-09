@@ -143,16 +143,16 @@ let rule_need_execution =
             match cmd with
             | Execute cmd ->
               Printf.bprintf cmdbuf "#command: '%s' '%s'\n"
-                (String.concat "' '" (BuildEngineRules.command_of_command cmd))
-                (String.concat "' '" (List.map BuildEngineRules.string_of_argument cmd.cmd_args));
+                (String.concat "' '" (BuildEngineRules.command_of_command r cmd))
+                (String.concat "' '" (List.map (BuildEngineRules.string_of_argument r) cmd.cmd_args));
               commands
             | Move (_, f1, f2) ->
               Printf.bprintf cmdbuf "#move: %s %s\n"
-                (BuildEngineRules.string_of_argument f1) (BuildEngineRules.string_of_argument f2);
+                (BuildEngineRules.string_of_argument r f1) (BuildEngineRules.string_of_argument r f2);
               commands
             | Copy (f1, f2) ->
               Printf.bprintf cmdbuf "#copy: %s %s\n"
-                (BuildEngineRules.string_of_argument f1) (BuildEngineRules.string_of_argument f2);
+                (BuildEngineRules.string_of_argument r f1) (BuildEngineRules.string_of_argument r f2);
               commands
             | MoveIfExists _ ->
          (* MoveIfExists() is only for non-targets ! Thus, it is
@@ -510,7 +510,7 @@ let print_waiting_queue b max_print =
         IntMap.iter (fun _ file ->
           Printf.eprintf "\t\tTARGET %s\n%!" (file_filename file))
           r.rule_targets;
-        List.iter BuildEngineRules.print_indented_command r.rule_commands;
+        List.iter (BuildEngineRules.print_indented_command r) r.rule_commands;
         IntMap.iter (fun _ f ->
           if not f.file_exists then
             Printf.eprintf "\t\tSOURCE %s missing\n%!" (file_filename f)
@@ -526,7 +526,7 @@ let print_waiting_queue b max_print =
         IntMap.iter (fun _ file ->
           Printf.eprintf "\t\tTARGET %s\n%!" (file_filename file))
           r.rule_targets;
-        List.iter BuildEngineRules.print_indented_command r.rule_commands;
+        List.iter (BuildEngineRules.print_indented_command r) r.rule_commands;
         IntMap.iter (fun _ f ->
           if not f.file_exists then
             Printf.eprintf "\t\tSOURCE %s missing\n%!" (file_filename f)
@@ -542,7 +542,7 @@ let print_waiting_queue b max_print =
         IntMap.iter (fun _ file ->
           Printf.eprintf "\tTARGET %s\n%!" (file_filename file))
           r.rule_targets;
-        List.iter BuildEngineRules.print_indented_command r.rule_commands;
+        List.iter (BuildEngineRules.print_indented_command r) r.rule_commands;
         IntMap.iter (fun _ f ->
           if not f.file_exists then
             Printf.eprintf "\t\t%s missing\n%!" (file_filename f)
@@ -900,7 +900,7 @@ let execute_command b proc =
     | Some cmd -> cmd
   in
   let cmd_args =
-    (BuildEngineRules.command_of_command cmd) @ List.map (BuildEngineRules.argument_of_argument r) cmd.cmd_args
+    (BuildEngineRules.command_of_command r cmd) @ List.map (BuildEngineRules.argument_of_argument r) cmd.cmd_args
   in
   b.build_stats_running_rules <- IntMap.add
     r.rule_id (r, MinUnix.gettimeofday()) b.build_stats_running_rules;
@@ -1034,9 +1034,9 @@ let parallel_loop b ncores =
   let rec iter nslots =
     if nslots > 0 then begin
       if !sigint_received <> None ||
-        b.fatal_errors <> [] ||
-        (b.stop_on_error_arg &&
-           BuildEngineDisplay.has_error b) then wait_for_end nslots else
+         b.fatal_errors <> [] ||
+         (b.stop_on_error_arg &&
+          BuildEngineDisplay.has_error b) then wait_for_end nslots else
         match next_rule b with
           None -> wait_for_end nslots
         | Some r ->
@@ -1100,7 +1100,7 @@ let parallel_loop b ncores =
                   if verbose 3 then
                     Printf.eprintf "[%d.%d] Just finished executing\n%!"
                       proc.proc_rule.rule_id proc.proc_step;
-        (* if verbose 7 then print_indented_command cmd; *)
+                  (* if verbose 7 then print_indented_command cmd; *)
                   status
               in
               proc.proc_last <- None;
@@ -1134,10 +1134,10 @@ let parallel_loop b ncores =
     if nslots > !max_nslots then max_nslots := nslots;
     match proc.proc_commands with
       [] ->
-        if verbose 3 then
-          Printf.eprintf "[%d.%d] rule finished\n%!" proc.proc_rule.rule_id proc.proc_step;
-        rule_executed b proc.proc_rule EXECUTION_SUCCESS;
-        nslots
+      if verbose 3 then
+        Printf.eprintf "[%d.%d] rule finished\n%!" proc.proc_rule.rule_id proc.proc_step;
+      rule_executed b proc.proc_rule EXECUTION_SUCCESS;
+      nslots
     | cmd :: tail ->
       if verbose 3 then
         Printf.eprintf "[%d.%d] command executed\n%!" proc.proc_rule.rule_id proc.proc_step;
@@ -1154,15 +1154,15 @@ let parallel_loop b ncores =
             Some e
         in
         begin match error with
-          None -> execute_proc proc nslots
-        | Some e ->
-          b.fatal_errors <- [
-            Printf.sprintf "Error while doing action %s:" name;
-            Printf.sprintf "\tException %s" (Printexc.to_string e);
-          ] :: b.fatal_errors;
+            None -> execute_proc proc nslots
+          | Some e ->
+            b.fatal_errors <- [
+              Printf.sprintf "Error while doing action %s:" name;
+              Printf.sprintf "\tException %s" (Printexc.to_string e);
+            ] :: b.fatal_errors;
 
-          rule_executed b proc.proc_rule EXECUTION_FAILURE;
-          nslots
+            rule_executed b proc.proc_rule EXECUTION_FAILURE;
+            nslots
         end
 
       | NeedTempDir ->
@@ -1179,30 +1179,33 @@ let parallel_loop b ncores =
         if verbose 3 then
           Printf.eprintf "[%d.%d] new exec\n%!" proc.proc_rule.rule_id proc.proc_step;
         begin match execute_command b proc with
-        | `PID pid ->
-          slots := IntMap.add pid proc !slots;
-          nslots - 1
-        | `EXN e ->
-          b.fatal_errors <- [
-            Printf.sprintf "Error while executing: '%s' '%s'\n"
-              (String.concat "' '" (BuildEngineRules.command_of_command cmd))
-              (String.concat "' '" (List.map BuildEngineRules.string_of_argument cmd.cmd_args));
-            Printf.sprintf "\tException %s" (Printexc.to_string e);
-          ] :: b.fatal_errors;
+          | `PID pid ->
+            slots := IntMap.add pid proc !slots;
+            nslots - 1
+          | `EXN e ->
+            b.fatal_errors <- [
+              Printf.sprintf "Error while executing: '%s' '%s'\n"
+                (String.concat "' '"
+                   (BuildEngineRules.command_of_command r cmd))
+                (String.concat "' '"
+                   (List.map
+                      (BuildEngineRules.string_of_argument r) cmd.cmd_args));
+                 Printf.sprintf "\tException %s" (Printexc.to_string e);
+            ] :: b.fatal_errors;
 
-          rule_executed b proc.proc_rule EXECUTION_FAILURE;
-          nslots
+            rule_executed b proc.proc_rule EXECUTION_FAILURE;
+            nslots
         end
       | LoadDeps (loader, file, r) ->
         if verbose 7 then
           Printf.eprintf "[%d.%d] load deps\n%!" proc.proc_rule.rule_id proc.proc_step;
-   (*       let loader =
-            try
-            find_dependency_loader loader
-            with Not_found ->
-            Printf.eprintf "Error: Unable to load dependencies of type '%s'\n" loader;
-            exit 2
-            in *)
+        (*       let loader =
+                 try
+                 find_dependency_loader loader
+                 with Not_found ->
+                 Printf.eprintf "Error: Unable to load dependencies of type '%s'\n" loader;
+                 exit 2
+                 in *)
         load_dependency_file b loader file r;
         execute_proc proc nslots
 
@@ -1218,7 +1221,7 @@ let parallel_loop b ncores =
             fa1 fa2;
         Printf.fprintf b.build_log "cp %s %s\n" fa1 fa2;
         begin try
-                File.copy_file ff1 ff2
+            File.copy_file ff1 ff2
           with e ->
             Printf.eprintf "Error copying %s to %s: %s\n%!" fa1 fa2
               (Printexc.to_string e);
@@ -1245,21 +1248,21 @@ let parallel_loop b ncores =
 
         Printf.fprintf b.build_log "mv %s %s\n" fa1 fa2;
         begin try
-                if
-                  (not only_if_changed) ||
-                    (not (Sys.file_exists fa2)) then
-                  BuildMisc.rename fa1 fa2
-                else begin
-                  if different_digests fa1 fa2 then begin
-                    if verbose 10 then
-                      Printf.eprintf "[CHANGED] %s changed.\n%!" fa2;
-               (* rename with override *)
-                    BuildMisc.rename fa1 fa2;
-                  end else begin
-                    if verbose 10 then
-                      Printf.eprintf "[CHANGED] %s did not change.\n%!" fa2
-                  end
-                end
+            if
+              (not only_if_changed) ||
+              (not (Sys.file_exists fa2)) then
+              BuildMisc.rename fa1 fa2
+            else begin
+              if different_digests fa1 fa2 then begin
+                if verbose 10 then
+                  Printf.eprintf "[CHANGED] %s changed.\n%!" fa2;
+                (* rename with override *)
+                BuildMisc.rename fa1 fa2;
+              end else begin
+                if verbose 10 then
+                  Printf.eprintf "[CHANGED] %s did not change.\n%!" fa2
+              end
+            end
           with e ->
             Printf.eprintf "Error moving %s to %s: %s\n%!"
               (fa1)
@@ -1282,36 +1285,36 @@ let parallel_loop b ncores =
 
         if File.exists ff1 then
           begin try
-                  if verbose 2 then
-                    Printf.eprintf "[%d.%d] mv? %s %s\n%!"
-                      proc.proc_rule.rule_id proc.proc_step
-                      fa1 fa2;
+              if verbose 2 then
+                Printf.eprintf "[%d.%d] mv? %s %s\n%!"
+                  proc.proc_rule.rule_id proc.proc_step
+                  fa1 fa2;
 
-                  Printf.fprintf b.build_log "mv? %s %s\n" fa1 fa2;
+              Printf.fprintf b.build_log "mv? %s %s\n" fa1 fa2;
 
-                  BuildMisc.rename fa1 fa2;
-                  match link with
-                  | None -> ()
-                  | Some f3 ->
-                    let src_file = File.to_string ff2 in
-                    let dst_file =
-                      File.to_string (BuildEngineRules.file_of_argument r f3) in
+              BuildMisc.rename fa1 fa2;
+              match link with
+              | None -> ()
+              | Some f3 ->
+                let src_file = File.to_string ff2 in
+                let dst_file =
+                  File.to_string (BuildEngineRules.file_of_argument r f3) in
+                try
+                  if Sys.file_exists dst_file then begin
+                    let ic = open_in dst_file in
                     try
-                      if Sys.file_exists dst_file then begin
-                        let ic = open_in dst_file in
-                        try
-                          let line = input_line ic in
-                          close_in ic;
-                          if line <> src_file then raise Not_found
-                        with e ->
-                          close_in ic;
-                          raise e
-                      end
-                      else raise Not_found
-                    with _ ->
-                      let oc = open_out dst_file in
-                      output_string oc src_file;
-                      close_out oc
+                      let line = input_line ic in
+                      close_in ic;
+                      if line <> src_file then raise Not_found
+                    with e ->
+                      close_in ic;
+                      raise e
+                  end
+                  else raise Not_found
+                with _ ->
+                  let oc = open_out dst_file in
+                  output_string oc src_file;
+                  close_out oc
             with e ->
               Printf.eprintf "Error moving %s to %s: %s\n%!"
                 fa1 fa2 (Printexc.to_string e);

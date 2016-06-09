@@ -73,11 +73,13 @@ type ocaml_package = {
   mutable lib_cmo_objects : BuildEngineTypes.build_file list;
   mutable lib_bytecomp_deps : BuildEngineTypes.build_file list;
   mutable lib_bytelink_deps : BuildEngineTypes.build_file list;
+  mutable lib_bytelink_flags : BuildEngineTypes.command_argument list;
   mutable lib_asm_targets : (BuildEngineTypes.build_file * target_kind) list;
   mutable lib_asm_cmx_objects : BuildEngineTypes.build_file list; (* .cmx *)
   mutable lib_asm_cmxo_objects : BuildEngineTypes.build_file list; (* .o *)
   mutable lib_asmcomp_deps : BuildEngineTypes.build_file list;
   mutable lib_asmlink_deps : BuildEngineTypes.build_file list;
+  mutable lib_asmlink_flags : BuildEngineTypes.command_argument list;
   mutable lib_clink_deps : BuildEngineTypes.build_file list;
   mutable lib_dep_deps : BuildEngineTypes.build_file IntMap.t;
 

@@ -28,6 +28,11 @@ let verbose =
 
 (* Rule Misc Functions *)
 
+let default_rule_subst s =
+  Printf.eprintf "Warning: no substitution in rule (was for %S)\n%!" s;
+  Printf.eprintf "   Replacing by %S.\n%!" "undefined";
+  "undefined"
+
 let new_rule rule_context rule_loc rule_main_target rule_commands =
   let rule_id = new_rule_id rule_context in
   let r = {
@@ -45,11 +50,29 @@ let new_rule rule_context rule_loc rule_main_target rule_commands =
     rule_state = RULE_INACTIVE;
 
     rule_context;
+    rule_subst = default_rule_subst;
   } in
   Hashtbl.add rule_context.build_rules r.rule_id r;
   rule_main_target.file_target_of <- r :: rule_main_target.file_target_of;
   r.rule_targets <- IntMap.add rule_main_target.file_id rule_main_target r.rule_targets;
   r
+
+let rule_subst r s =
+  (*  Printf.eprintf "rule_subst(%S)\n%!" s; *)
+  try
+    StringSubst.subst (fun v ->
+      (*      Printf.eprintf "   subst(%S)\n%!" v; *)
+      r.rule_subst v) s
+  with
+  | StringSubst.Error (StringSubst.SubstitutionError (v,_,_)) ->
+    Printf.eprintf "Error: rule %d, argument %S:\n"
+      r.rule_id s;
+    Printf.eprintf "  Substitution for %S not available\n%!" v;
+    exit 2
+
+let set_rule_subst r subst =
+  r.rule_subst <- subst;
+  ()
 
 let add_rule_source r file =
   if not (IntMap.mem file.file_id r.rule_sources) then begin
@@ -104,10 +127,10 @@ let new_command cmd args = {
   cmd_move_to_dir = None;
 }
 
-let string_of_argument arg =
+let string_of_argument r arg =
   match arg with
-    S s -> BuildSubst.subst_global s
-  | T s -> "${temp}/" ^ BuildSubst.subst_global s
+    S s -> rule_subst r s
+  | T s -> "${temp}/" ^ rule_subst r s
   | F f -> File.to_string f
   | BF f -> File.to_string f.file_file
   | BD d -> d.dir_fullname
@@ -127,24 +150,24 @@ let rule_temp_dir r =
 
 let file_of_argument r arg =
   match arg with
-    S s -> File.of_string (BuildSubst.subst_global s)
-  | T s -> File.add_basename (rule_temp_dir r) (BuildSubst.subst_global s)
+    S s -> File.of_string (rule_subst r s)
+  | T s -> File.add_basename (rule_temp_dir r) (rule_subst r s)
   | F f -> f
   | BF f -> f.file_file
   | BD d -> d.dir_file
 
 let argument_of_argument r arg =
   match arg with
-    S s -> BuildSubst.subst_global s
+    S s -> rule_subst r s
   | T s -> File.to_string (
-    File.add_basename (rule_temp_dir r) (BuildSubst.subst_global s))
+    File.add_basename (rule_temp_dir r) (rule_subst r s))
   | F f -> File.to_string f
   | BF f -> File.to_string f.file_file
   | BD d -> d.dir_fullname
 
 
-let command_of_command cmd =
-  List.map BuildSubst.subst_global cmd.cmd_command
+let command_of_command r cmd =
+  List.map (rule_subst r) cmd.cmd_command
 
 let argument_of_string s = S s
 
@@ -164,7 +187,7 @@ let add_command_pipe cmd filename =
   cmd.cmd_stdout_pipe <- Some filename
 
 
-let print_indented_command cmd =
+let print_indented_command r cmd =
   match cmd with
   | Execute cmd ->
     begin match cmd.cmd_move_to_dir with
@@ -172,7 +195,7 @@ let print_indented_command cmd =
     | Some chdir ->
       Printf.eprintf "\tcd %S\n" chdir;
     end;
-    Printf.eprintf "\t%s %s"  (String.concat " " cmd.cmd_command) (String.concat " " (List.map string_of_argument cmd.cmd_args));
+    Printf.eprintf "\t%s %s"  (String.concat " " cmd.cmd_command) (String.concat " " (List.map (string_of_argument r) cmd.cmd_args));
     begin
       match cmd.cmd_stdout_pipe with
         None -> Printf.eprintf "\n"
@@ -182,12 +205,12 @@ let print_indented_command cmd =
   | LoadDeps (_, file, r) -> Printf.eprintf "\tLoad dependencies from %s for %d\n"
     (file_filename file) r.rule_id
   | Copy (f1, f2) ->
-    Printf.eprintf "\tCopy %s to %s\n" (string_of_argument f1) (string_of_argument f2)
+    Printf.eprintf "\tCopy %s to %s\n" (string_of_argument r f1) (string_of_argument r f2)
   | Move (_, f1, f2) ->
-    Printf.eprintf "\tRename %s to %s\n" (string_of_argument f1) (string_of_argument f2)
+    Printf.eprintf "\tRename %s to %s\n" (string_of_argument r f1) (string_of_argument r f2)
   | MoveIfExists (f1, f2, _link) ->
     if verbose 4 then
-      Printf.eprintf "\tRename? %s to %s\n" (string_of_argument f1) (string_of_argument f2)
+      Printf.eprintf "\tRename? %s to %s\n" (string_of_argument r f1) (string_of_argument r f2)
   | DynamicAction (s,_) ->
     Printf.eprintf "\tDynamicAction %s\n" s
   | NeedTempDir ->
@@ -218,7 +241,7 @@ let print_rule r =
     Printf.eprintf "\t\tSOURCE %s%s\n" (file_filename file)
       (if file.file_exists then "(exists)" else "(not available)")
   ) r.rule_sources;
-  List.iter print_indented_command r.rule_commands;
+  List.iter (print_indented_command r) r.rule_commands;
   IntMap.iter (fun _ file ->
     Printf.eprintf "\t\tTARGET %s\n" (file_filename file)
   ) r.rule_targets;

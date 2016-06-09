@@ -182,8 +182,6 @@ module M = struct
     ) list;
     c
 
-
-
   let rec find_in_map b info node s pos =
     (*  Printf.fprintf stderr "find_in_map %d/%d\n" pos (String.length s); *)
     if pos < String.length s then
@@ -357,4 +355,158 @@ module Static = struct
 
 end
 
-include Gen
+type delim =
+  | DollarParen      (* $(XXX)  *)
+  | DollarBrace      (* ${XXX}  *)
+  | PercentBrace     (* %{XXX}  *)
+  | PercentBraceSym  (* %{XXX}% *)
+
+type error =
+  | UnexpectedEndOfString
+  | SubstitutionError of string * delim * exn
+
+exception Error of error
+
+let make_delim delim s =
+  match delim with
+  | DollarParen -> Printf.sprintf "$(%s)" s
+  | DollarBrace -> Printf.sprintf "${%s}" s
+  | PercentBrace -> Printf.sprintf "%%{%s}" s
+  | PercentBraceSym -> Printf.sprintf "%%{%s}%%" s
+
+let string_of_error = function
+  | UnexpectedEndOfString -> "Unexpected End of String in Variable"
+  | SubstitutionError (s, delim, exn) ->
+    Printf.sprintf "Substitution for %s : exception %s"
+      (make_delim delim s)
+      (Printexc.to_string exn)
+
+let () =
+  Printexc.register_printer (fun exn ->
+      match exn with
+      | Error error ->
+        Some (Printf.sprintf "Error(%s)" (string_of_error error))
+      | _ -> None
+    )
+
+let trysubst delim subst s =
+  try subst s with
+  | exn ->
+    raise (Error (SubstitutionError (s, delim, exn)))
+
+let subst dollarbrace
+    ?(dollarparen = dollarbrace)
+    ?(percentbrace = dollarbrace)
+    ?(percentbracesym = dollarbrace)
+    s =
+  let len = String.length s in
+  let rec iter0 i stack =
+    let b = Buffer.create len in
+    iter1 b i stack
+
+  and iter1 b i stack =
+    if i = len then
+      match stack with
+      | [] -> Buffer.contents b
+      | _ -> raise (Error UnexpectedEndOfString)
+    else
+      match s.[i], stack with
+      | '}', (bb, DollarBrace) :: tailstack ->
+        let ss = Buffer.contents b in
+        let sss = trysubst DollarBrace dollarbrace ss in
+        Buffer.add_string bb sss;
+        iter1 bb (i+1) tailstack
+      | ')', (bb, DollarParen) :: tailstack ->
+        let ss = Buffer.contents b in
+        let sss = trysubst DollarParen dollarparen ss in
+        Buffer.add_string bb sss;
+        iter1 bb (i+1) tailstack
+      | '}', (bb, PercentBrace) :: tailstack ->
+        let ss = Buffer.contents b in
+        if i+1 < len && s.[i+1] = '%' then
+          let sss = trysubst PercentBraceSym percentbracesym ss in
+          Buffer.add_string bb sss;
+          iter1 bb (i+2) tailstack
+        else
+          let sss = trysubst PercentBrace percentbrace ss in
+          Buffer.add_string bb sss;
+          iter1 bb (i+1) tailstack
+      | c, _ ->
+        if i+1 = len then begin
+          Buffer.add_char b c;
+          iter1 b (i+1) stack
+        end else
+          let cc = s.[i+1] in
+          match c, cc with
+          | '$', '{' ->
+            iter0 (i+2) ( (b, DollarBrace) :: stack )
+          | '$', '(' ->
+            iter0 (i+2) ( (b, DollarParen) :: stack )
+          | '%', '{' ->
+            iter0 (i+2) ( (b, PercentBrace) :: stack )
+          | '\\', c ->
+            Buffer.add_char b c;
+            iter1 b (i+2) stack
+          | _ ->
+            Buffer.add_char b c;
+            iter1 b (i+1) stack
+  in
+  iter0 0 []
+
+
+let () =
+  let f s = "[" ^ s ^ "," ^ s ^ "]" in
+
+  (*
+  let g s =
+    let ss = subst f s in
+    Printf.eprintf "assert ( subst f %S = %S );\n%!" s ss
+  in
+  List.iter g [
+    "";
+    "${}";
+    "$()";
+    "%{}";
+    "%{}%";
+    "a${}";
+    "a$()";
+    "a%{}";
+    "a%{}%";
+    "${}b";
+    "$()b";
+    "%{}b";
+    "%{}%b";
+    "a${}b";
+    "a$()b";
+    "a%{}b";
+    "a%{}%b";
+    "a${b%{c}d}e";
+    "a$(b%{c}d)e";
+    "a%{b%{c}d}e";
+    "a%{b%{c}d}%e";
+  ];
+  exit 2
+*)
+
+  assert ( subst f "" = "" );
+  assert ( subst f "${}" = "[,]" );
+  assert ( subst f "$()" = "[,]" );
+  assert ( subst f "%{}" = "[,]" );
+  assert ( subst f "%{}%" = "[,]" );
+  assert ( subst f "a${}" = "a[,]" );
+  assert ( subst f "a$()" = "a[,]" );
+  assert ( subst f "a%{}" = "a[,]" );
+  assert ( subst f "a%{}%" = "a[,]" );
+  assert ( subst f "${}b" = "[,]b" );
+  assert ( subst f "$()b" = "[,]b" );
+  assert ( subst f "%{}b" = "[,]b" );
+  assert ( subst f "%{}%b" = "[,]b" );
+  assert ( subst f "a${}b" = "a[,]b" );
+  assert ( subst f "a$()b" = "a[,]b" );
+  assert ( subst f "a%{}b" = "a[,]b" );
+  assert ( subst f "a%{}%b" = "a[,]b" );
+  assert ( subst f "a${b%{c}d}e" = "a[b[c,c]d,b[c,c]d]e" );
+  assert ( subst f "a$(b%{c}d)e" = "a[b[c,c]d,b[c,c]d]e" );
+  assert ( subst f "a%{b%{c}d}e" = "a[b[c,c]d,b[c,c]d]e" );
+  assert ( subst f "a%{b%{c}d}%e" = "a[b[c,c]d,b[c,c]d]e" );
+  ()

@@ -32,15 +32,15 @@ val initial_state : unit -> state
 val copy_state : state -> state
 val final_state : state -> final_package array
 
-val empty_config :config
-val generated_config :config
+val empty_config :(string * string) list -> config
+val generated_config :(string * string) list -> config
 
 val add_primitive : string ->    string list ->
   (env list -> (* all surrounding env, including the second argument ! *)
    env ->
    plist) -> unit
 
-val filesubst : (string * env list) StringSubst.M.subst
+val filesubst : (string * env list -> string) StringMap.t
 val subst_basename : string -> string
 
 val config_get : config -> string -> plist

@@ -32,7 +32,8 @@ val do_build :
   BuildTypes.builder_context * (module BuildTypes.Package) list *
   (module BuildTypes.Package) StringCompat.StringMap.t
 
-val do_read_env : BuildActions.project_info -> BuildOCPInterp.state
+val do_read_env : BuildActions.project_info ->
+  BuildOCPInterp.state * (string * string) list
 
 
 val get_ncores : BuildOptions.config_input -> int

@@ -109,18 +109,26 @@ let new_package pj name dirname filename filenames kind options =
   pj.packages <- IntMap.add pk.package_id pk pj.packages;
   pk
 
-let empty_config = {
-  config_env = BuildValue.empty_env;
-  config_configs = StringMap.empty;
-  config_dirname = "";
-  config_filename = "";
-  config_filenames = [];
-}
+let empty_config assocs =
+  let env = BuildValue.empty_env in
+  let env =
+    List.fold_left (fun env (name,v) ->
+        BuildValue.set_string env name v) env assocs
+  in
+  {
+    config_env = env;
+    config_configs = StringMap.empty;
+    config_dirname = "";
+    config_filename = "";
+    config_filenames = [];
+  }
 
-let generated_config = {
-  empty_config with
-  config_env = BuildValue.set_bool empty_config.config_env "generated" true;
-}
+let generated_config assocs =
+  let config = empty_config assocs in
+  let config_env = BuildValue.set_bool config.config_env  "generated" true in
+  {
+    config with config_env;
+  }
 
 (*
 let configs = Hashtbl.create 17
@@ -194,11 +202,24 @@ let check_package pk =
       )
     end
 
+let subst_with_config config s =
+  StringSubst.subst (fun s ->
+      BuildValue.get_string [config.config_env] s
+    ) s
+
 let define_package pj name config kind =
   let dirname =
     try
       let list = BuildValue.get_strings [config.config_env] "dirname"  in
-      BuildSubst.subst_global (String.concat Filename.dir_sep list)
+      let dirname = String.concat Filename.dir_sep list in
+      try
+        subst_with_config config dirname
+      with
+      | StringSubst.Error (StringSubst.SubstitutionError (s,_,_)) ->
+        Printf.eprintf "Error: package %S, dirname %S:\n"
+          name dirname;
+        Printf.eprintf "  Substitution for %S not available\n%!" s;
+        exit 2
     with Var_not_found _ ->
       config.config_dirname
   in
@@ -316,7 +337,7 @@ and translate_toplevel_statement pj config stmt =
         config.config_filename filename;
       Printf.eprintf "  have a .ocp extension, as it will be loaded independantly\n%!";
     end;
-    let filename = BuildSubst.subst_global filename in
+    let filename = subst_with_config config filename in
     let filename = if Filename.is_relative filename then
         Filename.concat config.config_dirname filename
       else filename

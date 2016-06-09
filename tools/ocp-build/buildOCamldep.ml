@@ -226,8 +226,8 @@ let filter_deps options option modules =
   List.filter (fun modname ->
     not (StringSet.mem modname nodeps)) modules
 
-let load_modules_dependencies lib options force dst_dir pack_for needs_odoc filename =
-  let envs = [options; lib.lib.lib_options] in
+let load_modules_dependencies
+    lib envs force dst_dir pack_for needs_odoc filename =
   let has_asm = asm_option.get envs in
   let has_byte = byte_option.get envs in
 

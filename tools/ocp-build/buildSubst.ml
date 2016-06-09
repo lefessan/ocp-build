@@ -18,17 +18,27 @@
 (*  SOFTWARE.                                                             *)
 (**************************************************************************)
 
+(*
+TODO:
+* BuildOCamlConfig: used to define substitutions for OCAMLLIB and OCAMLBIN.
+   Shall we still use them ? Where can we put them ?
 
 
-(* open BuildBase *)
-(* open Stdlib2 *)
-open StringSubst
+let global_subst = StringSubst.Gen.empty_subst ()
 
-let global_subst = empty_subst ()
+let add_variables f env var vv =
+  List.fold_left (fun env fmt ->
+      f env  (Printf.sprintf fmt var) vv) env [
+    "%%{%s}%%";
+    "${%s}";
+    "$(%s)";
+  ]
 
 let add_to_subst env var vv =
-(*  Printf.eprintf "BuildSubst.add %S -> %S\n%!" v vv; *)
-  add_to_subst env  (Printf.sprintf "%%{%s}%%" var) vv
+  let _env = add_variables (fun env s vv ->
+      StringSubst.Gen.add_to_subst env s vv; env) env var vv
+  in
+  ()
 
 let add_to_global_subst var var_value =
   add_to_subst global_subst var var_value
@@ -44,23 +54,23 @@ let putenv var var_value =
   add_to_global_subst var var_value
 
 let subst env_subst s =
-  let ss = snd (iter_subst env_subst s) in
+  let ss = snd (StringSubst.Gen.iter_subst env_subst s) in
 (*  Printf.eprintf "BuildSubst.subst %S -> %S\n%!" s ss; *)
   ss
 
 let subst_global = subst global_subst
 
 let add_to_local_subst env var vv =
-  add_to_copy env  (Printf.sprintf "%%{%s}%%" var) vv
+  add_variables StringSubst.Gen.add_to_copy env var vv
+
+*)
+
+open StringCompat
 
 let create_substituter list =
-  let subst = M.empty_subst () in
-  List.iter (fun (name, f) ->
-    M.add_to_subst subst ("%{" ^ name ^ "}%") f
-  ) list;
-  subst
+  StringMap.of_list list
 
 let apply_substituter subst s info =
-  let _, s1 = M.iter_subst subst s info in
-(*  Printf.eprintf "apply_substituter: %S -> %S\n%!" s s1; *)
-  s1
+  StringSubst.subst (fun s ->
+      (StringMap.find s subst) info
+    ) s

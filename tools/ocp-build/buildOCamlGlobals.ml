@@ -20,10 +20,12 @@
 
 open StringCompat
 
-
+open BuildEngineTypes (* for S *)
+open BuildValue.Types
 open BuildTypes
 open BuildOCamlTypes
 open BuildOptions
+open BuildOCamlVariables
 
 let list_byte_targets_arg = ref false
 let list_asm_targets_arg = ref false
@@ -33,9 +35,37 @@ let ocaml_packages = Hashtbl.create 111
 let reset () =
   Hashtbl.clear ocaml_packages
 
-let create_package lib =
-  let envs = [ lib.lib_options ] in
+let add_nopervasives_flag envs flags =
+  if nopervasives.get envs then
+    (S "-nopervasives" ) :: flags
+  else flags
 
+let add_asmdebug_flag envs flags =
+  if asmdebug_option.get envs then
+    (S "-g" ) :: flags
+  else flags
+
+let add_bytedebug_flag envs flags =
+  if asmdebug_option.get envs then
+    (S "-g" ) :: flags
+  else flags
+
+let bytelink_flags envs =
+  add_bytedebug_flag envs (
+    add_nopervasives_flag envs (
+      List.map BuildEngineRules.argument_of_string  (bytelink_option.get envs)
+    )
+  )
+
+let asmlink_flags envs =
+  add_asmdebug_flag envs (
+    add_nopervasives_flag envs (
+      List.map BuildEngineRules.argument_of_string (asmlink_option.get envs )
+    )
+  )
+
+(* envs : already contains lib.lib_options *)
+let create_package envs lib =
   let lib_archive = BuildValue.get_string_with_default envs "archive" lib.lib_name in
   let lib_stubarchive = BuildValue.get_string_with_default envs "stubarchive" ("ml" ^ lib_archive) in
 
@@ -49,11 +79,13 @@ let create_package lib =
     lib_cmo_objects = [];
     lib_bytecomp_deps = [];
     lib_bytelink_deps = [];
+    lib_bytelink_flags = bytelink_flags envs;
     lib_asm_targets = [];
     lib_asm_cmx_objects = [];
     lib_asm_cmxo_objects = [];
     lib_asmcomp_deps = [];
     lib_asmlink_deps = [];
+    lib_asmlink_flags = asmlink_flags envs;
     lib_clink_deps = [];
     lib_modules = ref StringMap.empty;
     lib_internal_modules = StringsMap.empty;

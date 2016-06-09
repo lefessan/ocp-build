@@ -52,14 +52,14 @@ let check_output options subst output  option_name output_name =
   in
   if output_check <> [] then
     let cmd_output = try
-      FileString.string_of_file output
-    with _ -> failwith
-                (Printf.sprintf "Missing output on %s" output_name)
+        FileString.string_of_file output
+      with _ -> failwith
+                  (Printf.sprintf "Missing output on %s" output_name)
     in
     let expected_output_file =
       (String.concat "/" output_check) in
     let expected_output_file =
-      BuildSubst.subst subst expected_output_file in
+      StringSubst.subst subst expected_output_file in
     let expected_output =
       try FileString.string_of_file expected_output_file
       with _ ->
@@ -83,7 +83,7 @@ let check_output options subst output  option_name output_name =
       if pos < String.length cmd_output then begin
         if cmd_output.[pos] <> expected_output.[pos] then
           failwith (Printf.sprintf "output %s differ at char %d"
-              output_name pos);
+                      output_name pos);
         iter (pos+1)
       end
     in
@@ -103,7 +103,7 @@ let find_binaries b cwd lib =
     in
     let binary =
       File.to_string (File.add_basenames b.build_dir
-          [lib.lib_name; binary_basename])
+                        [lib.lib_name; binary_basename])
     in
     Filename.concat cwd binary
   in
@@ -121,221 +121,230 @@ let test_package b stats lib only_benchmarks =
   match BuildOCamlGlobals.ocaml_package lib with
   | None -> ()
   | Some lib ->
-  let cwd = MinUnix.getcwd () in
-  let binaries, tests =
-    match lib.lib.lib_type, lib.lib_tests with
-    | TestPackage, _ ->
-      let binaries =
-        if lib.lib_sources = [] then
-          let program = ref None in
-          List.iter (fun dep ->
-            let pro = dep.dep_project in
-            match pro.lib_type, !program with
-            | ProgramPackage, Some pro1 ->
-              Printf.eprintf "Error: test %S depends on two programs %S and %S\n%!"
-                lib.lib.lib_name pro1.lib_name pro.lib_name;
-              BuildMisc.clean_exit 2
-            | ProgramPackage, None ->
-              program := Some pro
-            | _ -> () (* TODO: raise an error ? *)
-          ) lib.lib.lib_requires;
-          begin
-            match !program with
-              None ->
-              let cmd = BuildValue.get_strings_with_default [lib.lib.lib_options]
-                  "test_cmd" [] in
-              if cmd = [] then begin
-                Printf.eprintf "Error: test %S has no source files.\n%!"
-                  lib.lib.lib_name;
-                Printf.eprintf "  It should depend on the program it is testing.";
-                BuildMisc.clean_exit 2
-              end;
-              [ "cmd", String.concat "/" cmd ]
-            | Some pro -> find_binaries b cwd pro
-          end
-        else
-          find_binaries b cwd lib.lib
-      in
-      let tests =
-        match lib.lib_tests with
-          [] -> [ lib.lib.lib_name, BuildValue.empty_env ]
-        | tests -> tests
-      in
-      binaries, tests
-
-    | ProgramPackage, tests ->
-      find_binaries b cwd lib.lib, tests
-    | (ObjectsPackage
-      | LibraryPackage
-      | SyntaxPackage
-      | RulesPackage), _
-      -> assert false
-  in
-  if tests <> [] then begin
-  let ntests = ref 0 in
-
-    List.iter (fun (kind, binary) ->
-      let tests_dir = File.add_basenames b.build_dir
-          [ "_tests"; lib.lib.lib_name; "tests" ]
-      in
-      let tests_result_dir = Filename.concat cwd (File.to_string tests_dir) in
-      List.iter (fun (test, options) ->
-        let options = [ options; lib.lib.lib_options ] in
-        let test_asm = BuildValue.get_bool_with_default options "test_asm" true in
-        let test_byte = BuildValue.get_bool_with_default options "test_byte" true in
-        let do_test =
-          match kind with
-          | "asm" -> test_asm
-          | "byte" -> test_byte
-          | _ -> true
-        in
-        if do_test then
-          List.iter (fun variant ->
-            let test_basename =
-              Printf.sprintf "%s-%s%s" test kind variant
-            in
-            let test_result_dir = Filename.concat tests_result_dir
-                test_basename in
-            let test_info = Filename.concat test_result_dir "test_info.txt" in
-
-
-        let test_name = Printf.sprintf "%s/tests/%s" lib.lib.lib_name test_basename
-        in
-        let subst = BuildSubst.global_subst in
-        let subst = StringSubst.add_to_copy subst "%{variant}%" variant in
-        let subst = StringSubst.add_to_copy subst "%{kind}%" kind in
-        let subst = StringSubst.add_to_copy subst "%{test}%" test in
-        let subst = StringSubst.add_to_copy subst "%{binary}%" binary in
-        let subst = StringSubst.add_to_copy subst "%{tests}%"
-            (File.to_string
-               (File.add_basename lib.lib.lib_src_dir.dir_file "tests"))
-        in
-        let subst = StringSubst.add_to_copy subst "%{sources}%"
-            (File.to_string lib.lib.lib_src_dir.dir_file) in
-        let subst = StringSubst.add_to_copy subst "%{results}%"
-            test_result_dir in
-        let cmd = BuildValue.get_strings_with_default options
-            "test_cmd" [ "%{binary}%" ]
-        in
-        let cmd_args = BuildValue.get_strings_with_default options
-            "test_args" []
-        in
-        let cmd_args = cmd @ cmd_args in
-        let cmd_args = List.map (BuildSubst.subst subst) cmd_args in
-        if verbose 2 then
-          Printf.eprintf "Starting test '%s'\n%!"
-            (String.concat "' '" cmd_args);
-        let result_out = Filename.concat test_result_dir "result.out" in
-        let result_err = Filename.concat test_result_dir "result.err" in
-
-        let test_stdin = BuildValue.get_strings_with_default options "test_stdin" [] in
-        let test_stdin = match test_stdin with
-            [] -> None
-          | stdin ->
-            Some ( BuildSubst.subst subst (String.concat "/" stdin) ) in
-
-        let test_rundir = BuildValue.get_strings_with_default options "test_dir" [ "." ] in
-        let test_rundir = String.concat "/" test_rundir in
-        let test_rundir = BuildSubst.subst subst test_rundir in
-        let expected_status = BuildValue.get_string_with_default options
-            "test_exit" "0"
-        in
-        let expected_status = try
-          int_of_string expected_status
-        with _ ->
-          Printf.eprintf "Error: test %s.%s: bad number for expected status %S\n%!"
-            lib.lib.lib_name test expected_status;
-          BuildMisc.clean_exit 2
-        in
-        let benchmark =
-            let v = try BuildValue.get options "test_benchmark"
-              with _ -> VBool false
-            in
-            if v = VBool true then true else
-            if v = VBool false then false else
-              let list = BuildValue.strings_of_plist v in
-              let test_name =
-               BuildValue.get_string_with_default options "test_benchmarked"
-                  test_name
-              in
-              let test_name = BuildSubst.subst subst test_name in
-              try
-                List.mem test_name list
-              with Not_found -> false
-        in
-        let serialized = BuildValue.get_bool_with_default options
-            "test_serialized" false in
-
-
-        let start_test () =
-          BuildMisc.safe_mkdir test_result_dir;
-          let oc = open_out test_info in
-          Printf.fprintf oc "test=%S\n" test;
-          Printf.fprintf oc "test_binary=%S\n" binary;
-          Printf.fprintf oc "variant=%S\n" variant;
-          Printf.fprintf oc "test_dir=%S\n" test_rundir;
-          Printf.fprintf oc "test_kind=%S\n" kind;
-          Printf.fprintf oc "test_benchmark=%b\n" benchmark;
-          Printf.fprintf oc "test_serialized=%b\n" serialized;
-          Printf.fprintf oc "test_exit=%d\n" expected_status;
-          Printf.fprintf oc "test_cmd=\"%s\"\n"
-            (String.concat "\" \"" cmd_args);
-          close_out oc;
-
-          match BuildMisc.create_process cmd_args (Some test_rundir)
-              test_stdin (Some result_out) (Some result_err)
-          with
-          | `EXN e -> raise e
-     | `PID pid ->
-          if verbose 2 then
-            Printf.eprintf "Test started. Waiting...\n%!";
-          pid
-        in
-
-        let check_test time status =
-          if verbose 2 then
-            Printf.eprintf "Test finished\n%!";
-
-          if status = expected_status then begin
-            try
-              check_output options subst result_out "test_output" "stdout";
-              check_output options subst result_out "test_stdout" "stdout";
-              check_output options subst result_err "test_stderr" "stderr";
-
-              if benchmark then
-                stats.tests_timings <- (
-                  test_name, time) :: stats.tests_timings;
-              stats.tests_nsuccesses <- stats.tests_nsuccesses + 1
-            with Failure s ->
-              stats.tests_nfailures <- stats.tests_nfailures + 1;
-              stats.tests_failures <- (test_name, s)
-                :: stats.tests_failures
-          end
-          else begin
-            stats.tests_nfailures <- stats.tests_nfailures + 1;
-            stats.tests_failures <- (test_name,
-              Printf.sprintf "status=%d%s" status
-                (if expected_status <> 0 then
-                   Printf.sprintf " instead of %d expected" expected_status
-                 else "")
-            ) :: stats.tests_failures
-          end
-            in
-            if not only_benchmarks || benchmark then begin
-              incr ntests;
-              Queue.push (test_name, start_test, check_test)
-                (if benchmark || serialized then serial_workqueue
-                 else parallel_workqueue)
+    let cwd = MinUnix.getcwd () in
+    let binaries, tests =
+      match lib.lib.lib_type, lib.lib_tests with
+      | TestPackage, _ ->
+        let binaries =
+          if lib.lib_sources = [] then
+            let program = ref None in
+            List.iter (fun dep ->
+                let pro = dep.dep_project in
+                match pro.lib_type, !program with
+                | ProgramPackage, Some pro1 ->
+                  Printf.eprintf "Error: test %S depends on two programs %S and %S\n%!"
+                    lib.lib.lib_name pro1.lib_name pro.lib_name;
+                  BuildMisc.clean_exit 2
+                | ProgramPackage, None ->
+                  program := Some pro
+                | _ -> () (* TODO: raise an error ? *)
+              ) lib.lib.lib_requires;
+            begin
+              match !program with
+                None ->
+                let cmd = BuildValue.get_strings_with_default [lib.lib.lib_options]
+                    "test_cmd" [] in
+                if cmd = [] then begin
+                  Printf.eprintf "Error: test %S has no source files.\n%!"
+                    lib.lib.lib_name;
+                  Printf.eprintf "  It should depend on the program it is testing.";
+                  BuildMisc.clean_exit 2
+                end;
+                [ "cmd", String.concat "/" cmd ]
+              | Some pro -> find_binaries b cwd pro
             end
-          )
-            (BuildValue.get_strings_with_default options
-            "test_variants" [ "" ])
-      ) tests
-    ) binaries;
-    if verbose 1 && !ntests > 0 then
-      Printf.eprintf "%d tests to run for test %S...\n%!"
-        !ntests lib.lib.lib_name;
-  end
+          else
+            find_binaries b cwd lib.lib
+        in
+        let tests =
+          match lib.lib_tests with
+            [] -> [ lib.lib.lib_name, BuildValue.empty_env ]
+          | tests -> tests
+        in
+        binaries, tests
+
+      | ProgramPackage, tests ->
+        find_binaries b cwd lib.lib, tests
+      | (ObjectsPackage
+        | LibraryPackage
+        | SyntaxPackage
+        | RulesPackage), _
+        -> assert false
+    in
+    if tests <> [] then begin
+      let ntests = ref 0 in
+
+      List.iter (fun (kind, binary) ->
+          let tests_dir = File.add_basenames b.build_dir
+              [ "_tests"; lib.lib.lib_name; "tests" ]
+          in
+          let tests_result_dir = Filename.concat cwd (File.to_string tests_dir) in
+          List.iter (fun (test, options) ->
+              let options = [ options; lib.lib.lib_options ] in
+              let test_asm = BuildValue.get_bool_with_default options "test_asm" true in
+              let test_byte = BuildValue.get_bool_with_default options "test_byte" true in
+              let do_test =
+                match kind with
+                | "asm" -> test_asm
+                | "byte" -> test_byte
+                | _ -> true
+              in
+              if do_test then
+                List.iter (fun variant ->
+                    let test_basename =
+                      Printf.sprintf "%s-%s%s" test kind variant
+                    in
+                    let test_result_dir = Filename.concat tests_result_dir
+                        test_basename in
+                    let test_info = Filename.concat test_result_dir "test_info.txt" in
+
+
+                    let test_name = Printf.sprintf "%s/tests/%s" lib.lib.lib_name test_basename
+                    in
+                    let env = List.fold_left (fun env (v,vv) ->
+                        BuildValue.set_string env v vv
+                      ) lib.lib.lib_options
+                        [
+                          "variant", variant;
+                          "kind", kind;
+                          "test", test;
+                          "binary", binary;
+                          "tests", File.to_string
+                            (File.add_basename lib.lib.lib_src_dir.dir_file "tests");
+                          "sources", File.to_string
+                            lib.lib.lib_src_dir.dir_file;
+                          "results", test_result_dir
+                        ] in
+
+                    let subst s =
+                      StringSubst.subst (fun s ->
+                          BuildValue.get_string [env] s
+                        ) s
+                    in
+
+                    let cmd = BuildValue.get_strings_with_default options
+                        "test_cmd" [ "%{binary}%" ]
+                    in
+                    let cmd_args = BuildValue.get_strings_with_default options
+                        "test_args" []
+                    in
+                    let cmd_args = cmd @ cmd_args in
+
+                    let cmd_args = List.map subst cmd_args in
+                    if verbose 2 then
+                      Printf.eprintf "Starting test '%s'\n%!"
+                        (String.concat "' '" cmd_args);
+                    let result_out = Filename.concat test_result_dir "result.out" in
+                    let result_err = Filename.concat test_result_dir "result.err" in
+
+                    let test_stdin = BuildValue.get_strings_with_default options "test_stdin" [] in
+                    let test_stdin = match test_stdin with
+                        [] -> None
+                      | stdin ->
+                        Some (subst (String.concat "/" stdin) ) in
+
+                    let test_rundir = BuildValue.get_strings_with_default options "test_dir" [ "." ] in
+                    let test_rundir = String.concat "/" test_rundir in
+                    let test_rundir = subst test_rundir in
+                    let expected_status = BuildValue.get_string_with_default options
+                        "test_exit" "0"
+                    in
+                    let expected_status = try
+                        int_of_string expected_status
+                      with _ ->
+                        Printf.eprintf "Error: test %s.%s: bad number for expected status %S\n%!"
+                          lib.lib.lib_name test expected_status;
+                        BuildMisc.clean_exit 2
+                    in
+                    let benchmark =
+                      let v = try BuildValue.get options "test_benchmark"
+                        with _ -> VBool false
+                      in
+                      if v = VBool true then true else
+                      if v = VBool false then false else
+                        let list = BuildValue.strings_of_plist v in
+                        let test_name =
+                          BuildValue.get_string_with_default options "test_benchmarked"
+                            test_name
+                        in
+                        let test_name = subst test_name in
+                        try
+                          List.mem test_name list
+                        with Not_found -> false
+                    in
+                    let serialized = BuildValue.get_bool_with_default options
+                        "test_serialized" false in
+
+
+                    let start_test () =
+                      BuildMisc.safe_mkdir test_result_dir;
+                      let oc = open_out test_info in
+                      Printf.fprintf oc "test=%S\n" test;
+                      Printf.fprintf oc "test_binary=%S\n" binary;
+                      Printf.fprintf oc "variant=%S\n" variant;
+                      Printf.fprintf oc "test_dir=%S\n" test_rundir;
+                      Printf.fprintf oc "test_kind=%S\n" kind;
+                      Printf.fprintf oc "test_benchmark=%b\n" benchmark;
+                      Printf.fprintf oc "test_serialized=%b\n" serialized;
+                      Printf.fprintf oc "test_exit=%d\n" expected_status;
+                      Printf.fprintf oc "test_cmd=\"%s\"\n"
+                        (String.concat "\" \"" cmd_args);
+                      close_out oc;
+
+                      match BuildMisc.create_process cmd_args (Some test_rundir)
+                              test_stdin (Some result_out) (Some result_err)
+                      with
+                      | `EXN e -> raise e
+                      | `PID pid ->
+                        if verbose 2 then
+                          Printf.eprintf "Test started. Waiting...\n%!";
+                        pid
+                    in
+
+                    let check_test time status =
+                      if verbose 2 then
+                        Printf.eprintf "Test finished\n%!";
+
+                      if status = expected_status then begin
+                        try
+                          check_output options subst result_out "test_output" "stdout";
+                          check_output options subst result_out "test_stdout" "stdout";
+                          check_output options subst result_err "test_stderr" "stderr";
+
+                          if benchmark then
+                            stats.tests_timings <- (
+                              test_name, time) :: stats.tests_timings;
+                          stats.tests_nsuccesses <- stats.tests_nsuccesses + 1
+                        with Failure s ->
+                          stats.tests_nfailures <- stats.tests_nfailures + 1;
+                          stats.tests_failures <- (test_name, s)
+                                                  :: stats.tests_failures
+                      end
+                      else begin
+                        stats.tests_nfailures <- stats.tests_nfailures + 1;
+                        stats.tests_failures <- (test_name,
+                                                 Printf.sprintf "status=%d%s" status
+                                                   (if expected_status <> 0 then
+                                                      Printf.sprintf " instead of %d expected" expected_status
+                                                    else "")
+                                                ) :: stats.tests_failures
+                      end
+                    in
+                    if not only_benchmarks || benchmark then begin
+                      incr ntests;
+                      Queue.push (test_name, start_test, check_test)
+                        (if benchmark || serialized then serial_workqueue
+                         else parallel_workqueue)
+                    end
+                  )
+                  (BuildValue.get_strings_with_default options
+                     "test_variants" [ "" ])
+            ) tests
+        ) binaries;
+      if verbose 1 && !ntests > 0 then
+        Printf.eprintf "%d tests to run for test %S...\n%!"
+          !ntests lib.lib.lib_name;
+    end
 
 
 let parallel_job_engine njobs f =
@@ -431,13 +440,13 @@ let finish tests njobs =
   let ntotal = tests.tests_nsuccesses + tests.tests_nfailures in
   Printf.printf "FAILED: %d/%d\n" tests.tests_nfailures ntotal;
   List.iter (fun (test_name, result) ->
-    Printf.printf "  %s (%s)\n%!" test_name result
-  ) (List.sort compare tests.tests_failures);
+      Printf.printf "  %s (%s)\n%!" test_name result
+    ) (List.sort compare tests.tests_failures);
   Printf.printf "SUCCESS: %d/%d\n" tests.tests_nsuccesses ntotal;
   if tests.tests_timings <> [] then begin
     List.iter (fun (test_name, timing) ->
-      Printf.printf "  %.2fs\t%s\n%!" timing test_name
-    ) (List.sort compare tests.tests_timings);
+        Printf.printf "  %.2fs\t%s\n%!" timing test_name
+      ) (List.sort compare tests.tests_timings);
   end;
   if tests.tests_nfailures > 0 then begin
     Printf.eprintf "You can read failed test outputs in _obuild/_tests/PACKAGE/\n%!";
