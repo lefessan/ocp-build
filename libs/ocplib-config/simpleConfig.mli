@@ -223,6 +223,8 @@ val string2_to_value : string * string -> option_value
 val value_to_list : (option_value -> 'a) -> option_value -> 'a list
 val list_to_value : ('a -> option_value) -> 'a list -> option_value
 val smalllist_to_value : ('a -> option_value) -> 'a list -> option_value
+val value_to_option : (option_value -> 'a ) -> option_value -> 'a option
+val option_to_value : ('a -> option_value) -> 'a option -> option_value
 
 (*
   val value_to_path : option_value -> string list
@@ -230,9 +232,36 @@ val smalllist_to_value : ('a -> option_value) -> 'a list -> option_value
 *)
 
 val value_to_tuple2 :
-  (option_value * option_value -> 'a) -> option_value -> 'a
+  (option_value -> 'a) * (option_value -> 'b) ->
+  option_value -> 'a * 'b
 val tuple2_to_value :
-  ('a -> option_value * option_value) -> 'a -> option_value
+  ('a -> option_value) * ('b -> option_value) ->
+  'a * 'b -> option_value
+
+val value_to_tuple3 :
+  (option_value -> 'a) * (option_value -> 'b) * (option_value -> 'c) ->
+  option_value -> 'a * 'b * 'c
+val tuple3_to_value :
+  ('a -> option_value) * ('b -> option_value) * ('c -> option_value) ->
+  'a * 'b * 'c -> option_value
+
+val value_to_tuple4 :
+  (option_value -> 'a) * (option_value -> 'b) *
+  (option_value -> 'c) * (option_value -> 'd) ->
+  option_value -> 'a * 'b * 'c * 'd
+val tuple4_to_value :
+  ('a -> option_value) * ('b -> option_value) *
+  ('c -> option_value) * ('d -> option_value) ->
+  'a * 'b * 'c * 'd -> option_value
+
+val value_to_tuple5 :
+  (option_value -> 'a) * (option_value -> 'b) *
+  (option_value -> 'c) * (option_value -> 'd) * (option_value -> 'e) ->
+  option_value -> 'a * 'b * 'c * 'd * 'e
+val tuple5_to_value :
+  ('a -> option_value) * ('b -> option_value) *
+  ('c -> option_value) * ('d -> option_value) * ('e -> option_value) ->
+  'a * 'b * 'c * 'd * 'e -> option_value
 
 
 val filename_to_value : File.t -> option_value

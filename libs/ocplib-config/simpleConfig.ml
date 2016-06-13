@@ -662,7 +662,7 @@ let sum_option l =
   let ll = List.map (fun (a1, a2) -> a2, a1) l in
   define_option_class "Sum" (value_to_sum l) (sum_to_value ll)
 
-let option_to_value o =
+let option_to_value3 o =
   o.option_name,
   String.concat "\n" o.option_long_help,
   (try o.option_class.to_value o.option_value with
@@ -723,7 +723,7 @@ let save opfile =
           Printf.bprintf oc "(*************************************)\n";
           Printf.bprintf oc "\n\n";
         end;
-        save_module "" oc (List.map option_to_value options)
+        save_module "" oc (List.map option_to_value3 options)
       end
     ) opfile.file_sections;
     if !advanced then begin
@@ -749,7 +749,7 @@ let save opfile =
           Printf.bprintf oc "(* %-33s *)\n" s.section_help;
           Printf.bprintf oc "(*************************************)\n";
           Printf.bprintf oc "\n\n";
-          save_module "" oc (List.map option_to_value options)
+          save_module "" oc (List.map option_to_value3 options)
         ) opfile.file_sections;
     end;
     if not opfile.file_pruned then
@@ -839,72 +839,86 @@ let help oc opfile =
       s.section_options;
   ) opfile.file_sections
 
-
 let tuple2_to_value (c1, c2) (a1, a2) =
-  SmallList [to_value c1 a1; to_value c2 a2]
+  SmallList [c1 a1; c2 a2]
 
-let rec value_to_tuple2 (c1, c2 as cs) v =
+let rec value_to_tuple2 (c1, c2) v =
   match v with
-    List [v1; v2] -> from_value c1 v1, from_value c2 v2
-  | SmallList [v1; v2] -> from_value c1 v1, from_value c2 v2
-  | OnceValue v -> value_to_tuple2 cs v
+    List [v1; v2] -> c1 v1, c2 v2
+  | SmallList [v1; v2] -> c1 v1, c2 v2
+  | OnceValue v -> value_to_tuple2 (c1,c2) v
   | List l | SmallList l ->
       Printf.fprintf stderr "list of %d\n" (List.length l);
       failwith "Options: not a tuple2 list option"
   | _ -> failwith "Options: not a tuple2 option"
 
-let tuple2_option p =
-  define_option_class "tuple2_option" (value_to_tuple2 p) (tuple2_to_value p)
+let tuple2_option (cl1,cl2) =
+  define_option_class "tuple2_option"
+    (value_to_tuple2
+       (cl1.from_value, cl2.from_value))
+    (tuple2_to_value (cl1.to_value, cl2.to_value))
 
 let tuple3_to_value (c1, c2, c3) (a1, a2, a3) =
-  SmallList [to_value c1 a1; to_value c2 a2; to_value c3 a3]
-let rec value_to_tuple3 (c1, c2, c3 as cs) v =
+  SmallList [c1 a1; c2 a2; c3 a3]
+let rec value_to_tuple3 (c1, c2, c3) v =
   match v with
-    List [v1; v2; v3] -> from_value c1 v1, from_value c2 v2, from_value c3 v3
+    List [v1; v2; v3] -> c1 v1, c2 v2, c3 v3
   | SmallList [v1; v2; v3] ->
-      from_value c1 v1, from_value c2 v2, from_value c3 v3
-  | OnceValue v -> value_to_tuple3 cs v
+      c1 v1, c2 v2, c3 v3
+  | OnceValue v -> value_to_tuple3 (c1,c2,c3) v
   | _ -> failwith "Options: not a tuple3 option"
 
-let tuple3_option p =
-  define_option_class "tuple3_option" (value_to_tuple3 p) (tuple3_to_value p)
+let tuple3_option (cl1,cl2,cl3) =
+  define_option_class "tuple3_option"
+    (value_to_tuple3 (cl1.from_value,cl2.from_value,cl3.from_value))
+    (tuple3_to_value (cl1.to_value, cl2.to_value, cl3.to_value))
 
 let tuple4_to_value (c1, c2, c3, c4) (a1, a2, a3, a4) =
-  SmallList [to_value c1 a1; to_value c2 a2; to_value c3 a3; to_value c4 a4]
+  SmallList [c1 a1; c2 a2; c3 a3; c4 a4]
 let rec value_to_tuple4 (c1, c2, c3, c4 as cs) v =
   match v with
     List [v1; v2; v3; v4] | SmallList [v1; v2; v3; v4] ->
-      from_value c1 v1, from_value c2 v2, from_value c3 v3, from_value c4 v4
+      c1 v1, c2 v2, c3 v3, c4 v4
   | OnceValue v -> value_to_tuple4 cs v
   | _ -> failwith "Options: not a tuple4 option"
 
-let tuple4_option p =
-  define_option_class "tuple4_option" (value_to_tuple4 p) (tuple4_to_value p)
+let tuple4_option (cl1,cl2,cl3,cl4) =
+  define_option_class "tuple4_option"
+    (value_to_tuple4 (cl1.from_value,cl2.from_value,
+                      cl3.from_value,cl4.from_value))
+    (tuple4_to_value (cl1.to_value, cl2.to_value,
+                      cl3.to_value, cl4.to_value))
 
 let tuple5_to_value (c1, c2, c3, c4, c5) (a1, a2, a3, a4, a5) =
   SmallList [
-    to_value c1 a1;
-    to_value c2 a2;
-    to_value c3 a3;
-    to_value c4 a4;
-    to_value c5 a5;
+    c1 a1;
+     c2 a2;
+     c3 a3;
+     c4 a4;
+     c5 a5;
     ]
 
 let rec value_to_tuple5 ( (c1, c2, c3, c4, c5) as cs) v =
   match v with
   | List [v1; v2; v3; v4; v5]
   | SmallList [v1; v2; v3; v4; v5] ->
-      from_value c1 v1,
-      from_value c2 v2,
-      from_value c3 v3,
-      from_value c4 v4,
-      from_value c5 v5
+       c1 v1,
+       c2 v2,
+       c3 v3,
+       c4 v4,
+       c5 v5
   | OnceValue v -> value_to_tuple5 cs v
   | _ -> failwith "Options: not a tuple5 option"
 
-let tuple5_option p =
-  define_option_class "tuple5_option" (value_to_tuple5 p) (tuple5_to_value p)
 
+let tuple5_option (cl1,cl2,cl3,cl4,cl5) =
+  define_option_class "tuple4_option"
+    (value_to_tuple5 (cl1.from_value,cl2.from_value,
+                      cl3.from_value,cl4.from_value,
+                      cl5.from_value))
+    (tuple5_to_value (cl1.to_value, cl2.to_value,
+                      cl3.to_value, cl4.to_value,
+                      cl5.to_value))
 
 let value_to_filename v =
   File.of_string
@@ -1093,15 +1107,6 @@ let string_of_option_value o v =
     None ->
       value_to_string (o.option_class.to_value v)
   | Some (to_string, _) -> to_string v
-
-let tuple2_to_value f x =
-  let (v1, v2) = f x in
-  SmallList [v1; v2]
-
-let value_to_tuple2 f x =
-  match value_to_list (fun id -> id) x with
-    [v1;v2] -> f (v1, v2)
-  | _ -> assert false
 
 
 let info_of_option prefix o =
